@@ -22,6 +22,7 @@ var (
 	CONVERSATION_NOT_EXIST      = errors.New("该会话不存在")
 	AI_CHAT_PERMISSION_DENIED   = errors.New("会话权限不足")
 	MIND_MAP_NOT_EXIST          = errors.New("该导图不存在")
+	AI_CHAT_MESSAGE_MAX         = errors.New("会话长度已达上限，请开启新的会话")
 )
 
 type AiChatService struct {
@@ -44,6 +45,12 @@ func (a *AiChatService) ProcessUserMessage(ctx context.Context, req *types.Proce
 	if err != nil {
 		return types.AgentResponse{}, err
 	}
+
+	//长度限制o
+	if len(conversation.Messages) > 75 {
+		return types.AgentResponse{}, AI_CHAT_MESSAGE_MAX
+	}
+
 	//将数据写入ctx
 	ctx = entity.WithConversation(ctx, conversation)
 

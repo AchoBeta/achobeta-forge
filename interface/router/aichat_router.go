@@ -37,6 +37,9 @@ func aiChatServiceErrorToMsgCode(err error) response.MsgCode {
 	if errors.Is(err, aichatservice.MIND_MAP_NOT_EXIST) {
 		return response.MIND_MAP_NOT_EXIST
 	}
+	if errors.Is(err, aichatservice.AI_CHAT_MESSAGE_MAX) {
+		return response.AI_CHAT_MESSAGE_MAX
+	}
 
 	return response.COMMON_FAIL
 }

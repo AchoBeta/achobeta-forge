@@ -281,7 +281,7 @@ func (a *AiChatClient) generateForSFTTraining(ctx context.Context, text, userID 
 		}
 
 		// 创建对话记录
-		conversation, err := entity.NewConversation(userID, "BATCH_GENERATION", fmt.Sprintf("SFT训练-%d", i+1))
+		conversation, err := entity.NewConversation(userID, "test", "BATCH_GENERATION", fmt.Sprintf("SFT训练-%d", i+1))
 		if err != nil {
 			zlog.CtxWarnf(ctx, "创建对话失败 index:%d, err:%v", i, err)
 			continue
@@ -392,7 +392,7 @@ func (a *AiChatClient) generateForDPOTraining(ctx context.Context, text, userID 
 		}
 
 		// 创建对话记录
-		conversation, err := entity.NewConversation(userID, "BATCH_GENERATION", fmt.Sprintf("DPO训练-%s-%d", qualityPrompt.level, i+1))
+		conversation, err := entity.NewConversation(userID, "test", "BATCH_GENERATION", fmt.Sprintf("DPO训练-%s-%d", qualityPrompt.level, i+1))
 		if err != nil {
 			zlog.CtxWarnf(ctx, "创建对话失败 index:%d, err:%v", i, err)
 			continue
