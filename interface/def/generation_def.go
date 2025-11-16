@@ -9,7 +9,7 @@ import (
 type GenerateMindMapProReq struct {
 	Text     *string               `json:"text,omitempty" form:"text"`
 	File     *multipart.FileHeader `json:"-" form:"file"`            // 文件上传
-	Count    int                   `json:"count" form:"count"`       // 生成数量 3-5
+	Count    int                   `json:"count" form:"count"`       // 生成数量 1-5
 	Strategy int                   `json:"strategy" form:"strategy"` // 1=SFT训练数据(带推理过程), 2=DPO训练数据(质量对比)
 }
 
@@ -75,16 +75,10 @@ type ListUserGenerationBatchesResp struct {
 
 // ExportSFTDataReq 导出SFT数据请求
 type ExportSFTDataReq struct {
-	StartDate string `json:"start_date" form:"start_date"` // YYYY-MM-DD
-	EndDate   string `json:"end_date" form:"end_date"`     // YYYY-MM-DD
-	UserID    string `json:"user_id" form:"user_id"`       // 可选，管理员权限
-}
-
-// ExportSFTDataResp 导出SFT数据响应
-type ExportSFTDataResp struct {
-	JSONLData string `json:"jsonl_data"` // JSONL格式的训练数据
-	Count     int    `json:"count"`      // 记录数量
-	Success   bool   `json:"success"`
+	StartDate     string  `json:"start_date" form:"start_date"`                                 // YYYY-MM-DD
+	EndDate       string  `json:"end_date" form:"end_date"`                                     // YYYY-MM-DD
+	UserID        string  `json:"user_id" form:"user_id"`                                       // 可选，管理员权限
+	MinLossWeight float64 `json:"min_loss_weight" form:"min_loss_weight" binding:"min=0,max=1"` // loss_weight筛选阈值（1.0=只人工标注，0.5=人工+部分AI，0.0=全部）
 }
 
 // ExportSFTDataToFileResp 导出SFT数据到文件响应

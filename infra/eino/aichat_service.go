@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"forge/biz/entity"
+	"forge/biz/generationservice"
 	"forge/biz/repo"
 	"forge/biz/types"
 	"forge/infra/configs"
@@ -232,77 +233,86 @@ func (a *AiChatClient) GenerateMindMapBatch(ctx context.Context, text, userID st
 	}
 }
 
-// generateForSFTTraining 策略1：SFT训练数据策略 - 生成带reasoning_content的高质量数据
+// TODO：对于dpo还没去调用，对于数据的生成，不知道是不是通过提示词使得内容产生对比性 还是 格式的对比
+// generateForSFTTraining 策略1：SFT训练数据策略 - 并行生成+temperature控制多样性
 func (a *AiChatClient) generateForSFTTraining(ctx context.Context, text, userID string, count int) ([]string, []*entity.Conversation, error) {
-	// SFT训练专用系统提示词 - 要求生成带推理过程的高质量导图
-	sftSystemPrompt := configs.Config().GetAiChatConfig().GenerateSystemPrompt + `
+	// 使用标准System Prompt（方案：生成时直接使用，无需后期替换）
+	sftSystemPrompt := generationservice.SFTStandardSystemPrompt
 
-【SFT训练专用要求】
-你需要生成用于SFT（监督微调）训练的高质量数据。请按照以下要求：
+	// 并行生成结果通道
+	type generationResult struct {
+		content      string
+		conversation *entity.Conversation
+		err          error
+		index        int
+	}
+	resultChan := make(chan generationResult, count)
 
-1. **深度思考过程**：在生成导图前，请详细说明你的思考过程，包括：
-   - 对用户文本的理解和分析
-   - 思维导图结构的设计思路  
-   - 关键节点和层次关系的规划
-   - 为什么选择这样的组织方式
+	// 启动并行生成任务
+	for i := 0; i < count; i++ {
+		go func(index int) {
+			messages := []*schema.Message{
+				{
+					Content: sftSystemPrompt,
+					Role:    schema.System,
+				},
+				{
+					Content: text, // 直接使用用户文本，不添加任何额外信息
+					Role:    schema.User,
+				},
+			}
 
-2. **高质量输出**：确保导图具备：
-   - 清晰的逻辑结构（2-4层深度）
-   - 完整的JSON格式规范
-   - 准确的内容表达
-   - 合理的信息组织
+			// 关键优化：通过并行生成实现多样性
+			// 每次独立调用模型，利用模型内在的随机性产生不同结果
+			// 符合火山最佳实践：多样性来自采样随机性，而非prompt扰动
+			// TODO: 如需进一步控制多样性，可在中配置temperature参数，当前并行应该也有一定的随机性，就是不知道api能不能承受着
+			resp, err := a.ToolAiClient.Generate(ctx, messages)
 
-3. **输出格式**：
-   先输出【思考过程】，再输出【导图JSON】
-   
-请严格按照原有JSON规范输出，确保格式正确。`
+			if err != nil {
+				zlog.CtxWarnf(ctx, "并行生成失败 index:%d, err:%v", index, err)
+				resultChan <- generationResult{err: err, index: index}
+				return
+			}
 
+			// 创建对话记录
+			conversation, err := entity.NewConversation(userID, "BATCH_GENERATION", fmt.Sprintf("SFT训练-%d", index+1), "")
+			if err != nil {
+				resultChan <- generationResult{err: err, index: index}
+				return
+			}
+
+			// 添加消息（保持prompt一致）
+			conversation.AddMessage(sftSystemPrompt, entity.SYSTEM, "", nil)
+			conversation.AddMessage(text, entity.USER, "", nil) // 直接保存用户文本
+			conversation.AddMessage(resp.Content, entity.ASSISTANT, "", nil)
+
+			resultChan <- generationResult{
+				content:      resp.Content,
+				conversation: conversation,
+				index:        index,
+			}
+		}(i)
+	}
+
+	// 收集结果
 	results := make([]string, 0, count)
 	conversations := make([]*entity.Conversation, 0, count)
 
-	// 串行生成，确保质量一致性（SFT注重质量而非速度）
 	for i := 0; i < count; i++ {
-		messages := []*schema.Message{
-			{
-				Content: sftSystemPrompt,
-				Role:    schema.System,
-			},
-			{
-				Content: fmt.Sprintf("userID请填写：%s \n用户文本：%s", userID, text),
-				Role:    schema.User,
-			},
-		}
-
-		// 使用thinking模式生成带推理的内容
-		resp, err := a.ToolAiClient.Generate(ctx, messages)
-		if err != nil {
-			zlog.CtxWarnf(ctx, "SFT生成失败 index:%d, err:%v", i, err)
+		res := <-resultChan
+		if res.err != nil {
 			continue
 		}
-
-		// 创建对话记录
-		conversation, err := entity.NewConversation(userID, "BATCH_GENERATION", fmt.Sprintf("SFT训练-%d", i+1), "")
-		if err != nil {
-			zlog.CtxWarnf(ctx, "创建对话失败 index:%d, err:%v", i, err)
-			continue
-		}
-
-		// 添加消息到对话
-		conversation.AddMessage(sftSystemPrompt, entity.SYSTEM, "", nil)
-		conversation.AddMessage(fmt.Sprintf("userID请填写：%s \n用户文本：%s", userID, text), entity.USER, "", nil)
-		conversation.AddMessage(resp.Content, entity.ASSISTANT, "", nil)
-
-		results = append(results, resp.Content)
-		conversations = append(conversations, conversation)
-
-		zlog.CtxInfof(ctx, "SFT生成完成 %d/%d", i+1, count)
+		results = append(results, res.content)
+		conversations = append(conversations, res.conversation)
+		zlog.CtxInfof(ctx, "并行生成完成 %d/%d", len(results), count)
 	}
 
 	if len(results) == 0 {
-		return nil, nil, errors.New("SFT策略：所有生成都失败了")
+		return nil, nil, errors.New("所有并行生成都失败了")
 	}
 
-	zlog.CtxInfof(ctx, "SFT策略完成：成功生成 %d 个高质量样本", len(results))
+	zlog.CtxInfof(ctx, "SFT策略完成：并行生成 %d 个样本", len(results))
 	return results, conversations, nil
 }
 

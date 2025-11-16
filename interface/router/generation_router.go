@@ -28,10 +28,6 @@ func loadGenerationService(r *gin.RouterGroup) {
 	// [GET] /api/biz/v1/mindmap/generation/batches
 	r.Handle(GET, "generation/batches", ListUserGenerationBatches())
 
-	// 导出SFT数据
-	// [GET] /api/biz/v1/mindmap/generation/export-sft
-	r.Handle(GET, "generation/export-sft", ExportSFTData())
-
 	// 导出SFT数据到文件
 	// [GET] /api/biz/v1/mindmap/generation/export-sft-file
 	r.Handle(GET, "generation/export-sft-file", ExportSFTDataToFile())
@@ -132,25 +128,6 @@ func ListUserGenerationBatches() gin.HandlerFunc {
 	}
 }
 
-// ExportSFTData 导出SFT数据路由处理
-func ExportSFTData() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		var req def.ExportSFTDataReq
-		if err := c.ShouldBindQuery(&req); err != nil {
-			c.JSON(400, gin.H{"error": "Invalid parameters", "message": err.Error()})
-			return
-		}
-
-		resp, err := handler.GetHandler().ExportSFTData(c.Request.Context(), &req)
-		if err != nil {
-			c.JSON(500, gin.H{"error": "Internal server error", "message": err.Error()})
-			return
-		}
-
-		c.JSON(200, resp)
-	}
-}
-
 // ExportSFTDataToFile 导出SFT数据到文件路由处理
 func ExportSFTDataToFile() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -160,15 +137,12 @@ func ExportSFTDataToFile() gin.HandlerFunc {
 			return
 		}
 
-		// 直接获取JSONL数据
-		jsonlData, err := handler.GetHandler().GetSFTJSONLData(c.Request.Context(), &req)
+		// 调用Handler导出SFT数据（返回JSONL数据和文件名）
+		jsonlData, filename, err := handler.GetHandler().ExportSFTDataToFile(c.Request.Context(), &req)
 		if err != nil {
 			c.JSON(500, gin.H{"error": "Internal server error", "message": err.Error()})
 			return
 		}
-
-		// 生成文件名
-		filename := fmt.Sprintf("SFT_Text_Sample_%s.jsonl", time.Now().Format("20060102_150405"))
 
 		// 设置响应头
 		c.Header("Content-Type", "application/x-ndjson")

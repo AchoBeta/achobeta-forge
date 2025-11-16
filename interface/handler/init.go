@@ -47,10 +47,8 @@ type IHandler interface {
 	GetGenerationBatch(ctx context.Context, batchID string) (rsp *def.GetGenerationBatchResp, err error)
 	LabelGenerationResult(ctx context.Context, resultID string, req *def.LabelGenerationResultReq) (rsp *def.LabelGenerationResultResp, err error)
 	ListUserGenerationBatches(ctx context.Context, req *def.ListUserGenerationBatchesReq) (rsp *def.ListUserGenerationBatchesResp, err error)
-	ExportSFTData(ctx context.Context, req *def.ExportSFTDataReq) (rsp *def.ExportSFTDataResp, err error)
-	ExportSFTDataToFile(ctx context.Context, req *def.ExportSFTDataReq) (rsp *def.ExportSFTDataToFileResp, err error)
+	ExportSFTDataToFile(ctx context.Context, req *def.ExportSFTDataReq) (jsonlData string, filename string, err error)
 	ExportDPOData(ctx context.Context, req *def.ExportSFTDataReq) (string, error)
-	GetSFTJSONLData(ctx context.Context, req *def.ExportSFTDataReq) (string, error)
 }
 
 var handler IHandler

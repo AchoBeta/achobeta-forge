@@ -35,8 +35,8 @@ func (gb *GenerationBatch) Validate() error {
 	if gb.InputText == "" {
 		return errors.New("输入文本不能为空")
 	}
-	if gb.GenerationCount < 3 || gb.GenerationCount > 5 {
-		return errors.New("生成数量必须在3-5个之间")
+	if gb.GenerationCount < 1 || gb.GenerationCount > 5 {
+		return errors.New("生成数量必须在1-5个之间")
 	}
 	if gb.GenerationStrategy != 1 && gb.GenerationStrategy != 2 {
 		return errors.New("生成策略必须是1或2")

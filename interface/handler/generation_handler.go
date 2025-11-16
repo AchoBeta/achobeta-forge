@@ -23,7 +23,7 @@ func (h *Handler) GenerateMindMapPro(ctx context.Context, req *def.GenerateMindM
 	}()
 
 	// 参数验证
-	if req.Count < 3 || req.Count > 5 {
+	if req.Count < 1 || req.Count > 5 {
 		err = ErrInvalidParams
 		return
 	}
@@ -158,51 +158,10 @@ func (h *Handler) ListUserGenerationBatches(ctx context.Context, req *def.ListUs
 	return rsp, nil
 }
 
-// ExportSFTData 导出SFT数据
-func (h *Handler) ExportSFTData(ctx context.Context, req *def.ExportSFTDataReq) (rsp *def.ExportSFTDataResp, err error) {
+// ExportSFTDataToFile 导出SFT数据到文件（直接返回JSONL内容用于下载）
+func (h *Handler) ExportSFTDataToFile(ctx context.Context, req *def.ExportSFTDataReq) (jsonlData string, filename string, err error) {
 	defer func() {
-		zlog.CtxAllInOne(ctx, "handler.export_sft_data", req, rsp, err)
-	}()
-
-	// 获取用户信息
-	user, ok := entity.GetUser(ctx)
-	if !ok {
-		err = ErrPermissionDenied
-		return
-	}
-
-	userID := user.UserID
-	// 如果指定了userID，需要管理员权限（这里暂时简化处理）
-	if req.UserID != "" && req.UserID != userID {
-		// 可以在这里添加管理员权限检查
-		userID = req.UserID
-	}
-
-	// 调用服务层导出
-	jsonlData, err := h.GenerationService.ExportSFTData(ctx, req.StartDate, req.EndDate, userID)
-	if err != nil {
-		return nil, err
-	}
-
-	// 计算记录数量
-	count := 0
-	if jsonlData != "" {
-		count = len(strings.Split(strings.TrimSpace(jsonlData), "\n"))
-	}
-
-	// 组装响应
-	rsp = &def.ExportSFTDataResp{
-		JSONLData: jsonlData,
-		Count:     count,
-		Success:   true,
-	}
-	return rsp, nil
-}
-
-// ExportSFTDataToFile 导出SFT数据到文件
-func (h *Handler) ExportSFTDataToFile(ctx context.Context, req *def.ExportSFTDataReq) (rsp *def.ExportSFTDataToFileResp, err error) {
-	defer func() {
-		zlog.CtxAllInOne(ctx, "handler.export_sft_data_to_file", req, rsp, err)
+		zlog.CtxAllInOne(ctx, "handler.export_sft_data_to_file", req, map[string]interface{}{"filename": filename, "dataLen": len(jsonlData)}, err)
 	}()
 
 	// 获取用户信息
@@ -217,35 +176,19 @@ func (h *Handler) ExportSFTDataToFile(ctx context.Context, req *def.ExportSFTDat
 		userID = req.UserID
 	}
 
-	// 调用服务层导出
-	filename, err := h.GenerationService.ExportSFTDataToFile(ctx, req.StartDate, req.EndDate, userID)
+	// 默认minLossWeight=1.0（只导出人工标注）
+	minLossWeight := req.MinLossWeight
+	if minLossWeight == 0 {
+		minLossWeight = 1.0
+	}
+
+	// 调用服务层导出（返回JSONL数据和文件名）
+	jsonlData, filename, err = h.GenerationService.ExportSFTDataToFile(ctx, req.StartDate, req.EndDate, userID, minLossWeight)
 	if err != nil {
-		return nil, err
+		return "", "", err
 	}
 
-	// 组装响应
-	rsp = &def.ExportSFTDataToFileResp{
-		Filename: filename,
-		Success:  true,
-	}
-	return rsp, nil
-}
-
-// GetSFTJSONLData 获取SFT JSONL数据（用于直接文件下载）
-func (h *Handler) GetSFTJSONLData(ctx context.Context, req *def.ExportSFTDataReq) (string, error) {
-	// 获取用户信息
-	user, ok := entity.GetUser(ctx)
-	if !ok {
-		return "", ErrPermissionDenied
-	}
-
-	userID := user.UserID
-	if req.UserID != "" && req.UserID != userID {
-		userID = req.UserID
-	}
-
-	// 调用服务层导出
-	return h.GenerationService.ExportSFTData(ctx, req.StartDate, req.EndDate, userID)
+	return jsonlData, filename, nil
 }
 
 // ExportDPOData 导出DPO数据
