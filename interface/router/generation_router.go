@@ -32,6 +32,10 @@ func loadGenerationService(r *gin.RouterGroup) {
 	// [GET] /api/biz/v1/mindmap/generation/export-sft-file
 	r.Handle(GET, "generation/export-sft-file", ExportSFTDataToFile())
 
+	// 导出Session格式SFT数据
+	// [GET] /api/biz/v1/mindmap/generation/export-sft-session-file
+	r.Handle(GET, "generation/export-sft-session-file", ExportSFTSessionDataToFile())
+
 	// 导出DPO数据
 	// [GET] /api/biz/v1/mindmap/generation/export-dpo
 	r.Handle(GET, "generation/export-dpo", ExportDPOData())
@@ -150,6 +154,28 @@ func ExportSFTDataToFile() gin.HandlerFunc {
 		c.Header("Content-Length", fmt.Sprintf("%d", len(jsonlData)))
 
 		// 直接返回JSONL内容
+		c.String(200, jsonlData)
+	}
+}
+
+// ExportSFTSessionDataToFile 导出session格式SFT数据
+func ExportSFTSessionDataToFile() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req def.ExportSFTDataReq
+		if err := c.ShouldBindQuery(&req); err != nil {
+			c.JSON(400, gin.H{"error": "Invalid parameters", "message": err.Error()})
+			return
+		}
+
+		jsonlData, filename, err := handler.GetHandler().ExportSFTSessionDataToFile(c.Request.Context(), &req)
+		if err != nil {
+			c.JSON(500, gin.H{"error": "Internal server error", "message": err.Error()})
+			return
+		}
+
+		c.Header("Content-Type", "application/x-ndjson")
+		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
+		c.Header("Content-Length", fmt.Sprintf("%d", len(jsonlData)))
 		c.String(200, jsonlData)
 	}
 }

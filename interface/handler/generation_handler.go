@@ -191,6 +191,36 @@ func (h *Handler) ExportSFTDataToFile(ctx context.Context, req *def.ExportSFTDat
 	return jsonlData, filename, nil
 }
 
+// ExportSFTSessionDataToFile 导出session格式的SFT数据
+func (h *Handler) ExportSFTSessionDataToFile(ctx context.Context, req *def.ExportSFTDataReq) (jsonlData string, filename string, err error) {
+	defer func() {
+		zlog.CtxAllInOne(ctx, "handler.export_sft_session_data_to_file", req, map[string]interface{}{"filename": filename, "dataLen": len(jsonlData)}, err)
+	}()
+
+	user, ok := entity.GetUser(ctx)
+	if !ok {
+		err = ErrPermissionDenied
+		return
+	}
+
+	userID := user.UserID
+	if req.UserID != "" && req.UserID != userID {
+		userID = req.UserID
+	}
+
+	minLossWeight := req.MinLossWeight
+	if minLossWeight == 0 {
+		minLossWeight = 1.0
+	}
+
+	jsonlData, filename, err = h.GenerationService.ExportSFTSessionDataToFile(ctx, req.StartDate, req.EndDate, userID, minLossWeight)
+	if err != nil {
+		return "", "", err
+	}
+
+	return jsonlData, filename, nil
+}
+
 // ExportDPOData 导出DPO数据
 func (h *Handler) ExportDPOData(ctx context.Context, req *def.ExportSFTDataReq) (string, error) {
 	// 获取用户信息

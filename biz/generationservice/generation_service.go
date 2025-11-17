@@ -101,6 +101,50 @@ type SFTMessage struct {
 	ReasoningContent *string  `json:"reasoning_content,omitempty"`
 }
 
+type InferenceParameters struct {
+	Logprobs         bool     `json:"logprobs"`
+	TopLogprobs      int      `json:"top_logprobs"`
+	FrequencyPenalty float64  `json:"frequency_penalty"`
+	Temperature      float64  `json:"temperature"`
+	TopP             float64  `json:"top_p"`
+	MaxTokens        int      `json:"max_tokens"`
+	Stop             []string `json:"stop"`
+}
+
+type SimpleSFTRecord struct {
+	System     string              `json:"system,omitempty"`
+	Prompt     string              `json:"prompt"`
+	Answer     string              `json:"answer,omitempty"`
+	Parameters InferenceParameters `json:"parameters"`
+}
+
+type sftSample struct {
+	Result       *entity.GenerationResult
+	Conversation *entity.Conversation
+	DataSource   string
+	Metrics      *QualityMetrics
+}
+
+func defaultInferenceParameters() InferenceParameters {
+	return InferenceParameters{
+		Logprobs:         false,
+		TopLogprobs:      10,
+		FrequencyPenalty: 0.0,
+		Temperature:      1.0,
+		TopP:             0.7,
+		MaxTokens:        4096,
+		Stop:             []string{},
+	}
+}
+
+func determineLossWeight(dataSource, jsonPayload string) float64 {
+	if dataSource == "FEWSHOT_GENERATION" {
+		lengthMod := len(jsonPayload) % 40
+		return 0.1 + float64(lengthMod)/100.0
+	}
+	return 1.0
+}
+
 // buildSFTRecord 构建SFT记录
 // 当前业务场景：单轮对话（一个user输入 + 一个assistant输出）
 // TODO: 多轮对话场景需要按火山要求拆分样本（每轮最后的assistant带reasoning_content）
@@ -133,14 +177,7 @@ func (g *GenerationService) buildSFTRecord(conversation *entity.Conversation, la
 			// 根据数据来源设置loss_weight
 			// 人工标注(BATCH_GENERATION)：loss_weight=1.0（高质量）
 			// AI生成(FEWSHOT_GENERATION)：loss_weight=0.1-0.5（中等质量）
-			var lossWeight float64
-			if dataSource == "FEWSHOT_GENERATION" {
-				// AI生成样本：随机0.1-0.5
-				lossWeight = 0.1 + (float64(len(jsonContent)%40) / 100.0) // 伪随机，基于内容长度
-			} else {
-				// 人工标注样本：固定1.0
-				lossWeight = 1.0
-			}
+			lossWeight := determineLossWeight(dataSource, jsonContent)
 			sftMessage.LossWeight = &lossWeight
 		}
 
@@ -150,6 +187,119 @@ func (g *GenerationService) buildSFTRecord(conversation *entity.Conversation, la
 	record := &SFTRecord{
 		Messages: messages,
 		Thinking: "disabled", // 符合火山要求
+	}
+
+	return record, nil
+}
+
+// collectQualifiedSFTSamples 统一的数据收集与清洗流程
+func (g *GenerationService) collectQualifiedSFTSamples(ctx context.Context, startDate, endDate, userID string) ([]*sftSample, error) {
+	results, err := g.generationRepo.GetLabeledResults(ctx, userID, startDate, endDate)
+	if err != nil {
+		return nil, fmt.Errorf("获取标记数据失败: %w", err)
+	}
+	zlog.CtxInfof(ctx, "Step1: 原始标记数据 %d 条", len(results))
+
+	if len(results) == 0 {
+		return nil, fmt.Errorf("没有标记数据")
+	}
+
+	sftResults := g.selectSFTSamples(ctx, results)
+	zlog.CtxInfof(ctx, "Step2: 策略过滤 %d 条 (strategy=1, label=1)", len(sftResults))
+
+	cleaned := FilterAnomalies(sftResults)
+	zlog.CtxInfof(ctx, "Step3: 异常过滤 %d 条", len(cleaned))
+
+	batches := g.loadBatchesForResults(ctx, cleaned)
+	deduped := DeduplicateResults(cleaned, batches)
+	zlog.CtxInfof(ctx, "Step4: 去重 %d 条", len(deduped))
+
+	qualityPassed := make([]*entity.GenerationResult, 0, len(deduped))
+	metricsMap := make(map[string]*QualityMetrics, len(deduped))
+	for _, result := range deduped {
+		metrics, err := ValidateMindMapQuality(result.MapJSON)
+		if err != nil || metrics.FormatScore == 0 {
+			zlog.CtxWarnf(ctx, "格式错误 resultID=%s: %v", result.ResultID, err)
+			continue
+		}
+		qualityPassed = append(qualityPassed, result)
+		metricsMap[result.ResultID] = metrics
+	}
+	zlog.CtxInfof(ctx, "Step5: 格式校验通过 %d 条", len(qualityPassed))
+
+	if len(qualityPassed) == 0 {
+		return nil, fmt.Errorf("没有通过质量校验的数据")
+	}
+
+	var samples []*sftSample
+	failedConv := 0
+	for _, result := range qualityPassed {
+		conversation, err := g.aiChatRepo.GetConversation(ctx, result.ConversationID, userID)
+		if err != nil {
+			failedConv++
+			zlog.CtxWarnf(ctx, "获取对话失败 conversationID=%s", result.ConversationID)
+			continue
+		}
+
+		dataSource := "BATCH_GENERATION"
+		if conversation.MapID == "FEWSHOT_GENERATION" {
+			dataSource = "FEWSHOT_GENERATION"
+		}
+
+		samples = append(samples, &sftSample{
+			Result:       result,
+			Conversation: conversation,
+			DataSource:   dataSource,
+			Metrics:      metricsMap[result.ResultID],
+		})
+	}
+
+	zlog.CtxInfof(ctx, "Step6: 对话加载成功 %d 条，失败 %d 条", len(samples), failedConv)
+
+	if len(samples) == 0 {
+		return nil, fmt.Errorf("没有可导出的数据")
+	}
+
+	return samples, nil
+}
+
+func (g *GenerationService) buildSimpleSFTRecord(sample *sftSample) (*SimpleSFTRecord, error) {
+	conversation := sample.Conversation
+	if len(conversation.Messages) < 2 {
+		return nil, fmt.Errorf("对话消息不足")
+	}
+
+	var systemContent string
+	var promptContent string
+	var answerContent string
+
+	for _, message := range conversation.Messages {
+		role := strings.ToLower(message.Role)
+		switch role {
+		case "system":
+			if systemContent == "" {
+				systemContent = message.Content
+			}
+		case "user":
+			// 记录最后一条用户消息
+			promptContent = message.Content
+		case "assistant":
+			// 取最后一条assistant内容
+			answerContent = message.Content
+		default:
+			continue
+		}
+	}
+
+	if promptContent == "" {
+		return nil, fmt.Errorf("缺少用户输入")
+	}
+
+	record := &SimpleSFTRecord{
+		System:     systemContent,
+		Prompt:     promptContent,
+		Answer:     answerContent,
+		Parameters: defaultInferenceParameters(),
 	}
 
 	return record, nil
@@ -622,64 +772,17 @@ type DPOMessage struct {
 func (g *GenerationService) ExportSFTDataToFile(ctx context.Context, startDate, endDate, userID string, minLossWeight float64) (string, string, error) {
 	zlog.CtxInfof(ctx, "开始导出SFT数据到文件: userID=%s, minLossWeight=%.2f", userID, minLossWeight)
 
-	// Step 1: 获取已标记数据
-	results, err := g.generationRepo.GetLabeledResults(ctx, userID, startDate, endDate)
+	samples, err := g.collectQualifiedSFTSamples(ctx, startDate, endDate, userID)
 	if err != nil {
-		return "", "", fmt.Errorf("获取标记数据失败: %w", err)
-	}
-	zlog.CtxInfof(ctx, "Step1: 原始标记数据 %d 条", len(results))
-
-	if len(results) == 0 {
-		return "", "", fmt.Errorf("没有标记数据")
+		return "", "", err
 	}
 
-	// Step 2: 策略过滤（只要SFT策略的正样本）
-	sftResults := g.selectSFTSamples(ctx, results)
-	zlog.CtxInfof(ctx, "Step2: 策略过滤 %d 条 (strategy=1, label=1)", len(sftResults))
-
-	// Step 3: 异常过滤
-	cleaned := FilterAnomalies(sftResults)
-	zlog.CtxInfof(ctx, "Step3: 异常过滤 %d 条", len(cleaned))
-
-	// Step 4: 去重
-	batches := g.loadBatchesForResults(ctx, cleaned)
-	deduped := DeduplicateResults(cleaned, batches)
-	zlog.CtxInfof(ctx, "Step4: 去重 %d 条", len(deduped))
-
-	// Step 5: 格式校验（格式错误直接丢弃）
-	var qualityPassed []*entity.GenerationResult
-	for _, result := range deduped {
-		metrics, err := ValidateMindMapQuality(result.MapJSON)
-		if err != nil || metrics.FormatScore == 0 {
-			zlog.CtxWarnf(ctx, "格式错误 resultID=%s: %v", result.ResultID, err)
-			continue
-		}
-		qualityPassed = append(qualityPassed, result)
-	}
-	zlog.CtxInfof(ctx, "Step5: 格式校验通过 %d 条", len(qualityPassed))
-
-	// TODO: 质量报告功能待实现（统计格式通过率、平均内容分、深度分布等）
-
-	// Step 6: 构建JSONL（支持loss_weight筛选）
+	totalQualified := len(samples)
 	var jsonlLines []string
 	filteredCount := 0
 
-	for _, result := range qualityPassed {
-		conversation, err := g.aiChatRepo.GetConversation(ctx, result.ConversationID, userID)
-		if err != nil {
-			zlog.CtxWarnf(ctx, "获取对话失败 conversationID=%s", result.ConversationID)
-			continue
-		}
-
-		// 根据对话MapID判断数据来源
-		// BATCH_GENERATION = 人工标注样本
-		// FEWSHOT_GENERATION = AI生成样本
-		dataSource := "BATCH_GENERATION" // 默认人工标注
-		if conversation.MapID == "FEWSHOT_GENERATION" {
-			dataSource = "FEWSHOT_GENERATION"
-		}
-
-		record, err := g.buildSFTRecord(conversation, result.Label, dataSource)
+	for _, sample := range samples {
+		record, err := g.buildSFTRecord(sample.Conversation, sample.Result.Label, sample.DataSource)
 		if err != nil {
 			zlog.CtxWarnf(ctx, "构建SFT记录失败: %v", err)
 			continue
@@ -704,7 +807,7 @@ func (g *GenerationService) ExportSFTDataToFile(ctx context.Context, startDate, 
 		jsonlLines = append(jsonlLines, string(jsonBytes))
 	}
 
-	zlog.CtxInfof(ctx, "导出完成: 总样本%d, 筛选掉%d, 最终%d条", len(qualityPassed), filteredCount, len(jsonlLines))
+	zlog.CtxInfof(ctx, "导出完成: 总样本%d, 筛选掉%d, 最终%d条", totalQualified, filteredCount, len(jsonlLines))
 
 	jsonlData := strings.Join(jsonlLines, "\n")
 	if jsonlData == "" {
@@ -723,6 +826,62 @@ func (g *GenerationService) ExportSFTDataToFile(ctx context.Context, startDate, 
 	}
 
 	// 返回JSONL数据和文件名
+	return jsonlData, filename, nil
+}
+
+// ExportSFTSessionDataToFile 导出简化格式的SFT数据
+func (g *GenerationService) ExportSFTSessionDataToFile(ctx context.Context, startDate, endDate, userID string, minLossWeight float64) (string, string, error) {
+	zlog.CtxInfof(ctx, "开始导出简单SFT数据: userID=%s, minLossWeight=%.2f", userID, minLossWeight)
+
+	samples, err := g.collectQualifiedSFTSamples(ctx, startDate, endDate, userID)
+	if err != nil {
+		return "", "", err
+	}
+
+	totalQualified := len(samples)
+	var jsonlLines []string
+	filteredCount := 0
+
+	for _, sample := range samples {
+		lossWeight := determineLossWeight(sample.DataSource, sample.Result.MapJSON)
+		if lossWeight < minLossWeight {
+			filteredCount++
+			zlog.CtxDebugf(ctx, "简单格式导出筛选低权重样本: loss_weight=%.2f < %.2f", lossWeight, minLossWeight)
+			continue
+		}
+
+		record, err := g.buildSimpleSFTRecord(sample)
+		if err != nil {
+			zlog.CtxWarnf(ctx, "构建简单格式SFT记录失败: %v", err)
+			continue
+		}
+
+		jsonBytes, err := json.Marshal(record)
+		if err != nil {
+			zlog.CtxWarnf(ctx, "序列化Session记录失败: %v", err)
+			continue
+		}
+
+		jsonlLines = append(jsonlLines, string(jsonBytes))
+	}
+
+	zlog.CtxInfof(ctx, "简单格式导出完成: 总样本%d, 筛选掉%d, 最终%d条", totalQualified, filteredCount, len(jsonlLines))
+
+	jsonlData := strings.Join(jsonlLines, "\n")
+	if jsonlData == "" {
+		return "", "", fmt.Errorf("没有可导出的数据")
+	}
+
+	timestamp := time.Now().Format("20060102_150405")
+	var filename string
+	if minLossWeight >= 1.0 {
+		filename = fmt.Sprintf("SFT_Simple_Human_Only_%s_%s.jsonl", userID, timestamp)
+	} else if minLossWeight >= 0.5 {
+		filename = fmt.Sprintf("SFT_Simple_Mixed_%.1f_%s_%s.jsonl", minLossWeight, userID, timestamp)
+	} else {
+		filename = fmt.Sprintf("SFT_Simple_All_%.1f_%s_%s.jsonl", minLossWeight, userID, timestamp)
+	}
+
 	return jsonlData, filename, nil
 }
 

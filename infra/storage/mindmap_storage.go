@@ -46,6 +46,15 @@ func (m *mindMapPersistence) CreateMindMap(ctx context.Context, mindmap *entity.
 	if err := m.db.WithContext(ctx).Create(mindmapPO).Error; err != nil {
 		return fmt.Errorf("create mindmap failed: %w", err)
 	}
+
+	// 回填创建/更新时间，便于上层直接返回
+	if mindmapPO.CreatedAt != nil {
+		mindmap.CreatedAt = *mindmapPO.CreatedAt
+	}
+	if mindmapPO.UpdatedAt != nil {
+		mindmap.UpdatedAt = *mindmapPO.UpdatedAt
+	}
+
 	return nil
 }
 
