@@ -747,6 +747,7 @@ func (u *UserServiceImpl) UpdateUserName(ctx context.Context, userID, newUserNam
 		zlog.CtxErrorf(ctx, "invalid params for update username: userID is empty")
 		return ErrInvalidParams
 	}
+	newUserName = strings.TrimSpace(newUserName)
 	if newUserName == "" {
 		zlog.CtxErrorf(ctx, "invalid params for update username: newUserName is empty")
 		return ErrInvalidParams
@@ -758,10 +759,22 @@ func (u *UserServiceImpl) UpdateUserName(ctx context.Context, userID, newUserNam
 		return ErrInvalidParams
 	}
 
-	// 检查用户是否存在
+	// 检查用户是否存在（先验证调用者身份）
 	_, err := u.GetUserByID(ctx, userID)
 	if err != nil {
 		return err
+	}
+
+	// 检查用户名是否已被其他用户使用
+	query := repo.NewUserQueryByName(newUserName)
+	existingUser, err := u.userRepo.GetUser(ctx, query)
+	if err != nil {
+		zlog.CtxErrorf(ctx, "failed to check if username exists: %v", err)
+		return ErrInternalError
+	}
+	if existingUser != nil && existingUser.UserID != userID {
+		zlog.CtxWarnf(ctx, "username already in use: %s", newUserName)
+		return ErrAccountAlreadyInUse
 	}
 
 	// 更新用户名

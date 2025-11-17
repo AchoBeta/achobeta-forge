@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"strings"
 
 	// "forge/constant"
 	"forge/biz/entity"
@@ -221,6 +222,7 @@ func (h *Handler) UpdateUserName(ctx context.Context, req *def.UpdateUserNameReq
 	}
 
 	// 参数校验
+	req.UserName = strings.TrimSpace(req.UserName)
 	if req.UserName == "" {
 		zlog.CtxErrorf(ctx, "user_name is empty")
 		return nil, userservice.ErrInvalidParams
