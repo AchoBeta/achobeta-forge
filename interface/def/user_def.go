@@ -120,6 +120,16 @@ type UnbindAccountResp struct {
 	Success bool `json:"success"` // 解绑是否成功
 }
 
+//---------更新用户名-----------
+type UpdateUserNameReq struct {
+	UserName string `json:"user_name"` // 新用户名
+}
+
+type UpdateUserNameResp struct {
+	Success  bool   `json:"success"`
+	UserName string `json:"user_name"` // 更新后的用户名
+}
+
 //---------第三方登录相关-----------
 type OAuthCallbackResp struct {
 	Success  bool   `json:"success"`             // 登录是否成功

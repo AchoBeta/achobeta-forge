@@ -22,6 +22,8 @@ type IHandler interface {
 	UnbindAccount(ctx context.Context, req *def.UnbindAccountReq) (rsp *def.UnbindAccountResp, err error)
 	// UpdateAvatar: 更新头像
 	UpdateAvatar(ctx context.Context, req *def.UpdateAvatarReq) (rsp *def.UpdateAvatarResp, err error)
+	// UpdateUserName: 更新用户名
+	UpdateUserName(ctx context.Context, req *def.UpdateUserNameReq) (rsp *def.UpdateUserNameResp, err error)
 
 	// MindMap: 思维导图相关接口
 	CreateMindMap(ctx context.Context, req *def.CreateMindMapReq) (rsp *def.CreateMindMapResp, err error)

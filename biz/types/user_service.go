@@ -35,6 +35,9 @@ type IUserService interface {
 	// UpdateAvatar 更新用户头像
 	UpdateAvatar(ctx context.Context, userID, avatarURL string) error
 
+	// UpdateUserName 更新用户名
+	UpdateUserName(ctx context.Context, userID, newUserName string) error
+
 	// OAuthLogin 第三方登录（GitHub/微信等）
 	OAuthLogin(ctx context.Context, provider string, gothUser *goth.User) (*entity.User, string, error)
 }
