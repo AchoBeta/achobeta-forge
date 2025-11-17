@@ -207,3 +207,35 @@ func (h *Handler) UpdateAvatar(ctx context.Context, req *def.UpdateAvatarReq) (r
 	}
 	return rsp, nil
 }
+
+func (h *Handler) UpdateUserName(ctx context.Context, req *def.UpdateUserNameReq) (rsp *def.UpdateUserNameResp, err error) {
+	defer func() {
+		zlog.CtxAllInOne(ctx, "handler.update_user_name", req, rsp, err)
+	}()
+
+	// context获取用户信息
+	user, ok := entity.GetUser(ctx)
+	if !ok {
+		zlog.CtxErrorf(ctx, "user not found in context, this should not happen if JWT middleware works correctly")
+		return nil, userservice.ErrInternalError
+	}
+
+	// 参数校验
+	if req.UserName == "" {
+		zlog.CtxErrorf(ctx, "user_name is empty")
+		return nil, userservice.ErrInvalidParams
+	}
+
+	// 调用用户服务更新用户名
+	err = h.UserService.UpdateUserName(ctx, user.UserID, req.UserName)
+	if err != nil {
+		zlog.CtxErrorf(ctx, "failed to update username in database: %v", err)
+		return nil, err
+	}
+
+	rsp = &def.UpdateUserNameResp{
+		UserName: req.UserName,
+		Success:  true,
+	}
+	return rsp, nil
+}
