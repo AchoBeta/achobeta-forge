@@ -205,3 +205,50 @@ func (m *mindMapPersistence) DeleteMindMap(ctx context.Context, mapID string, us
 
 	return nil
 }
+
+// BatchDeleteMindMap 批量删除思维导图（软删除）
+func (m *mindMapPersistence) BatchDeleteMindMap(ctx context.Context, mapIDs []string, userID string) (deletedCount int, err error) {
+	if len(mapIDs) == 0 || userID == "" {
+		return 0, fmt.Errorf("MapIDs and UserID are required for batch deletion")
+	}
+
+	result := m.db.WithContext(ctx).
+		Model(&po.MindMapPO{}).
+		Where("map_id IN ? AND user_id = ? AND is_deleted = 0", mapIDs, userID).
+		Update("is_deleted", 1)
+
+	if result.Error != nil {
+		return 0, fmt.Errorf("batch delete mindmaps failed: %w", result.Error)
+	}
+
+	return int(result.RowsAffected), nil
+}
+
+// BatchGetMindMapsByIDs 批量查询指定mapIDs且属于指定用户的思维导图（用于权限验证）
+func (m *mindMapPersistence) BatchGetMindMapsByIDs(ctx context.Context, mapIDs []string, userID string) ([]*entity.MindMap, error) {
+	if len(mapIDs) == 0 || userID == "" {
+		return nil, fmt.Errorf("MapIDs and UserID are required")
+	}
+
+	var mindmapPOs []po.MindMapPO
+	err := m.db.WithContext(ctx).
+		Where("map_id IN ? AND user_id = ? AND is_deleted = 0", mapIDs, userID).
+		Find(&mindmapPOs).Error
+
+	if err != nil {
+		return nil, fmt.Errorf("batch get mindmaps failed: %w", err)
+	}
+
+	// 转换为领域对象
+	mindmaps := make([]*entity.MindMap, 0, len(mindmapPOs))
+	for _, po := range mindmapPOs {
+		mindmap, err := CastMindMapPO2DO(&po)
+		if err != nil {
+			zlog.CtxErrorf(ctx, "failed to cast mindmap PO to DO for mapID %s: %v", po.MapID, err)
+			continue
+		}
+		mindmaps = append(mindmaps, mindmap)
+	}
+
+	return mindmaps, nil
+}

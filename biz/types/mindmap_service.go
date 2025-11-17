@@ -11,6 +11,7 @@ type IMindMapService interface {
 	ListMindMaps(ctx context.Context, req *ListMindMapsParams) ([]*entity.MindMap, int64, error)
 	UpdateMindMap(ctx context.Context, mapID string, req *UpdateMindMapParams) error
 	DeleteMindMap(ctx context.Context, mapID string) error
+	BatchDeleteMindMap(ctx context.Context, mapIDs []string) (deletedCount int, failedMapIDs []string, err error)
 }
 
 // 创建参数 - 服务层参数对象，无需json tag

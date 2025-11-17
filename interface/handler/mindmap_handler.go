@@ -126,3 +126,27 @@ func (h *Handler) DeleteMindMap(ctx context.Context, mapID string) (rsp *def.Del
 	}
 	return rsp, nil
 }
+
+func (h *Handler) BatchDeleteMindMap(ctx context.Context, req *def.BatchDeleteMindMapReq) (rsp *def.BatchDeleteMindMapResp, err error) {
+	// 链路追踪 - TODO: cozeloop配置好后启用
+	// ctx, sp := loop.GetNewSpan(ctx, "handler.batch_delete_mindmap", constant.LoopSpanType_Handle)
+	defer func() {
+		zlog.CtxAllInOne(ctx, "handler.batch_delete_mindmap", req, rsp, err)
+		// loop.SetSpanAllInOne(ctx, sp, req, rsp, err)
+	}()
+
+	// 调用服务层批量删除思维导图
+	deletedCount, failedMapIDs, err := h.MindMapService.BatchDeleteMindMap(ctx, req.MapIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	// 组装响应
+	rsp = &def.BatchDeleteMindMapResp{
+		Success:      len(failedMapIDs) == 0 && deletedCount > 0,
+		DeletedCount: deletedCount,
+		FailedCount:  len(failedMapIDs),
+		FailedMapIDs: failedMapIDs,
+	}
+	return rsp, nil
+}

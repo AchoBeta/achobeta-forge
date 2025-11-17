@@ -31,6 +31,7 @@ type IHandler interface {
 	ListMindMaps(ctx context.Context, req *def.ListMindMapsReq) (rsp *def.ListMindMapsResp, err error)
 	UpdateMindMap(ctx context.Context, mapID string, req *def.UpdateMindMapReq) (rsp *def.UpdateMindMapResp, err error)
 	DeleteMindMap(ctx context.Context, mapID string) (rsp *def.DeleteMindMapResp, err error)
+	BatchDeleteMindMap(ctx context.Context, req *def.BatchDeleteMindMapReq) (rsp *def.BatchDeleteMindMapResp, err error)
 
 	// COS: OSS凭证相关接口
 	GetOSSCredentials(ctx context.Context, req *def.GetOSSCredentialsReq) (rsp *def.GetOSSCredentialsResp, err error)

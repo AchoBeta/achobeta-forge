@@ -18,6 +18,9 @@ type IMindMapRepo interface {
 	ListMindMaps(ctx context.Context, query MindMapQuery) ([]*entity.MindMap, int64, error)
 	UpdateMindMap(ctx context.Context, updateInfo *MindMapUpdateInfo) error
 	DeleteMindMap(ctx context.Context, mapID string, userID string) error
+	BatchDeleteMindMap(ctx context.Context, mapIDs []string, userID string) (deletedCount int, err error)
+	// BatchGetMindMapsByIDs 批量查询指定mapIDs且属于指定用户的思维导图（用于权限验证）
+	BatchGetMindMapsByIDs(ctx context.Context, mapIDs []string, userID string) ([]*entity.MindMap, error)
 }
 
 // MindMapQuery 查询条件

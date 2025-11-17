@@ -231,3 +231,79 @@ func (s *MindMapServiceImpl) DeleteMindMap(ctx context.Context, mapID string) er
 	zlog.CtxInfof(ctx, "mindmap deleted successfully, mapID: %s, userID: %s", mapID, user.UserID)
 	return nil
 }
+
+// BatchDeleteMindMap 批量删除思维导图（用户只能删除自己的思维导图）
+func (s *MindMapServiceImpl) BatchDeleteMindMap(ctx context.Context, mapIDs []string) (deletedCount int, failedMapIDs []string, err error) {
+	// 从JWT token上下文中获取用户信息
+	user, ok := entity.GetUser(ctx)
+	if !ok {
+		zlog.CtxErrorf(ctx, "failed to get user from context")
+		return 0, nil, ErrPermissionDenied
+	}
+
+	// 参数校验
+	if len(mapIDs) == 0 {
+		zlog.CtxErrorf(ctx, "mapIDs is required")
+		return 0, nil, ErrInvalidParams
+	}
+
+	// 去重
+	uniqueMapIDs := make(map[string]bool)
+	dedupedMapIDs := make([]string, 0, len(mapIDs))
+	for _, id := range mapIDs {
+		if id == "" {
+			continue
+		}
+		if !uniqueMapIDs[id] {
+			uniqueMapIDs[id] = true
+			dedupedMapIDs = append(dedupedMapIDs, id)
+		}
+	}
+
+	if len(dedupedMapIDs) == 0 {
+		zlog.CtxErrorf(ctx, "no valid mapIDs after deduplication")
+		return 0, nil, ErrInvalidParams
+	}
+
+	// 权限验证：批量查询这些mapIDs，验证它们是否都属于当前用户
+	ownedMindMaps, err := s.mindMapRepo.BatchGetMindMapsByIDs(ctx, dedupedMapIDs, user.UserID)
+	if err != nil {
+		zlog.CtxErrorf(ctx, "failed to batch get mindmaps for permission check: %v", err)
+		return 0, nil, ErrInternalError
+	}
+
+	// 构建属于当前用户的mapID集合
+	ownedMapIDs := make(map[string]bool)
+	for _, mindMap := range ownedMindMaps {
+		ownedMapIDs[mindMap.MapID] = true
+	}
+
+	// 找出不属于当前用户的mapIDs
+	validMapIDs := make([]string, 0, len(dedupedMapIDs))
+	failedMapIDs = make([]string, 0)
+	for _, mapID := range dedupedMapIDs {
+		if ownedMapIDs[mapID] {
+			validMapIDs = append(validMapIDs, mapID)
+		} else {
+			failedMapIDs = append(failedMapIDs, mapID)
+		}
+	}
+
+	// 如果没有有效的mapIDs，直接返回
+	if len(validMapIDs) == 0 {
+		zlog.CtxWarnf(ctx, "no valid mapIDs belong to user %s", user.UserID)
+		return 0, failedMapIDs, nil
+	}
+
+	// 执行批量删除（只删除属于当前用户的）
+	deletedCount, err = s.mindMapRepo.BatchDeleteMindMap(ctx, validMapIDs, user.UserID)
+	if err != nil {
+		zlog.CtxErrorf(ctx, "failed to batch delete mindmaps: %v", err)
+		return deletedCount, failedMapIDs, ErrInternalError
+	}
+
+	zlog.CtxInfof(ctx, "batch delete mindmaps completed, userID: %s, requested: %d, deleted: %d, failed: %d",
+		user.UserID, len(dedupedMapIDs), deletedCount, len(failedMapIDs))
+
+	return deletedCount, failedMapIDs, nil
+}

@@ -145,9 +145,9 @@ func loadMindMapService(r *gin.RouterGroup) {
 	// [PUT] /api/biz/v1/mindmap/:id
 	r.Handle(PUT, ":id", UpdateMindMap())
 
-	// 删除思维导图
-	// [DELETE] /api/biz/v1/mindmap/:id
-	r.Handle(DELETE, ":id", DeleteMindMap())
+	// 批量删除思维导图
+	// [POST] /api/biz/v1/mindmap/batch_delete
+	r.Handle(POST, "batch_delete", BatchDeleteMindMap())
 }
 
 func loadCOSService(r *gin.RouterGroup) {
