@@ -21,7 +21,7 @@ import (
 	"forge/interface/router"
 	"forge/pkg/log"
 	"github.com/unidoc/unioffice/v2/common/license"
-
+	pdfLicense "github.com/unidoc/unipdf/v4/common/license"
 	// "forge/pkg/loop"
 	"forge/util"
 )
@@ -81,7 +81,7 @@ func Init() {
 	//从配置文件中读取解析文件apikey
 	uniOfficeConfig := configs.Config().GetUniOfficeConfig()
 	license.SetMeteredKey(uniOfficeConfig.MeteredKey)
-	license.SetMeteredKey("uniapi") //文件解析初始化44
+	pdfLicense.SetMeteredKey(uniOfficeConfig.MeteredKey)
 
 	// 初始化JWT鉴权中间件
 	router.InitJWTAuth(us)
