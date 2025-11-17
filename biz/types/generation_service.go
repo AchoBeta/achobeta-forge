@@ -36,6 +36,9 @@ type IGenerationService interface {
 	// 返回：jsonlData, filename, error
 	ExportSFTDataToFile(ctx context.Context, startDate, endDate, userID string, minLossWeight float64) (string, string, error)
 
+	// ExportSFTSessionDataToFile 导出session格式的SFT数据文件
+	ExportSFTSessionDataToFile(ctx context.Context, startDate, endDate, userID string, minLossWeight float64) (string, string, error)
+
 	// SaveSelectedMindMap 保存选中的导图到正式系统
 	SaveSelectedMindMap(ctx context.Context, resultID string) (*entity.MindMap, error)
 

@@ -50,6 +50,7 @@ type IHandler interface {
 	LabelGenerationResult(ctx context.Context, resultID string, req *def.LabelGenerationResultReq) (rsp *def.LabelGenerationResultResp, err error)
 	ListUserGenerationBatches(ctx context.Context, req *def.ListUserGenerationBatchesReq) (rsp *def.ListUserGenerationBatchesResp, err error)
 	ExportSFTDataToFile(ctx context.Context, req *def.ExportSFTDataReq) (jsonlData string, filename string, err error)
+	ExportSFTSessionDataToFile(ctx context.Context, req *def.ExportSFTDataReq) (jsonlData string, filename string, err error)
 	ExportDPOData(ctx context.Context, req *def.ExportSFTDataReq) (string, error)
 }
 
