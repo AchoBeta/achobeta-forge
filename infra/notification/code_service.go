@@ -3,11 +3,11 @@ package notification
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -101,13 +101,29 @@ func (c *codeServiceImpl) SendSMSCode(ctx context.Context, phone, code string) e
 		return fmt.Errorf("sms endpoint not configured")
 	}
 
-	smsURL := fmt.Sprintf(endpoint, c.smsConfig.Key, url.QueryEscape(code), url.QueryEscape(phone))
+	// 构建 URL: https://push.spug.cc/sms/{key}
+	smsURL := fmt.Sprintf(endpoint, c.smsConfig.Key)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, smsURL, nil)
+	// 构建 JSON 请求体
+	requestBody := map[string]string{
+		"code":    code,
+		"targets": phone,
+	}
+	jsonData, err := json.Marshal(requestBody)
+	if err != nil {
+		zlog.CtxErrorf(ctx, "序列化请求体失败: %v", err)
+		return fmt.Errorf("failed to marshal request body: %w", err)
+	}
+
+	// 创建 POST 请求
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, smsURL, bytes.NewBuffer(jsonData))
 	if err != nil {
 		zlog.CtxErrorf(ctx, "创建短信服务请求失败: %v", err)
 		return fmt.Errorf("failed to create sms service request: %w", err)
 	}
+
+	// 设置 Content-Type
+	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
