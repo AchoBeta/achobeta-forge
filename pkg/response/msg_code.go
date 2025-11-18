@@ -1,7 +1,10 @@
 package response
 
 import (
+	"encoding/json"
 	"net/http"
+
+	"forge/pkg/log/zlog"
 
 	"github.com/gin-gonic/gin"
 )
@@ -25,12 +28,44 @@ func NewResponse(c *gin.Context) *JsonMsgResponse {
 	return &JsonMsgResponse{Ctx: c}
 }
 
+// injectLogID 将 response 注入 logid
+func (r *JsonMsgResponse) injectLogID(res JsonMsgResult) {
+	ctx := r.Ctx.Request.Context()
+	logID, ok := zlog.GetLogId(ctx)
+	if !ok || logID == "" {
+		// 如果没有 logid，直接返回原 response
+		r.Ctx.JSON(http.StatusOK, res)
+		return
+	}
+
+	// 将 response 序列化为 map
+	resBytes, err := json.Marshal(res)
+	if err != nil {
+		// 序列化失败，直接返回原 response
+		r.Ctx.JSON(http.StatusOK, res)
+		return
+	}
+
+	var resMap map[string]interface{}
+	if err := json.Unmarshal(resBytes, &resMap); err != nil {
+		// 反序列化失败，直接返回原 response
+		r.Ctx.JSON(http.StatusOK, res)
+		return
+	}
+
+	// 注入 log_id
+	resMap["log_id"] = logID
+
+	// 返回注入后的 response
+	r.Ctx.JSON(http.StatusOK, resMap)
+}
+
 func (r *JsonMsgResponse) Success(data interface{}) {
 	res := JsonMsgResult{}
 	res.Code = SUCCESS_CODE
 	res.Message = SUCCESS_MSG
 	res.Data = data
-	r.Ctx.JSON(http.StatusOK, res)
+	r.injectLogID(res)
 }
 
 func (r *JsonMsgResponse) Error(mc MsgCode) {
@@ -45,7 +80,17 @@ func (r *JsonMsgResponse) error(code int, message string) {
 	res.Code = code
 	res.Message = message
 	res.Data = nilStruct{}
-	r.Ctx.JSON(http.StatusOK, res)
+	r.injectLogID(res)
 }
 
-// todo这里能不能做一个allInOne函数?
+// AllInOne 统一处理成功和错误响应，注入 logid
+func (r *JsonMsgResponse) AllInOne(data interface{}, err error, errorCode int, errorMsg string) {
+	if err != nil {
+		if errorMsg == "" {
+			errorMsg = err.Error()
+		}
+		r.error(errorCode, errorMsg)
+	} else {
+		r.Success(data)
+	}
+}

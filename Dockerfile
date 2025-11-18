@@ -27,8 +27,8 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
 # Stage 2: Production stage
 FROM alpine:latest
 
-# 安装必要的包，包含curl用于健康检查
-RUN apk --no-cache add ca-certificates tzdata curl
+# 安装必要的包
+RUN apk --no-cache add ca-certificates tzdata
 
 # 创建非root用户
 RUN adduser -D -g '' appuser
@@ -54,10 +54,6 @@ USER appuser
 
 # 暴露端口
 EXPOSE 8080
-
-# 健康检查（使用curl替代wget）
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8080/health || exit 1
 
 # 运行应用程序
 CMD ["./achobeta.server.forge"]

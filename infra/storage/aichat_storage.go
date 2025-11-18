@@ -34,12 +34,17 @@ func GetAiChatPersistence() repo.AiChatRepo { return cp }
 func (a *aiChatPersistence) GetConversation(ctx context.Context, conversationID, userID string) (*entity.Conversation, error) {
 	if conversationID == "" {
 		return nil, aichatservice.CONVERSATION_ID_NOT_NULL
-	} else if userID == "" {
-		return nil, aichatservice.USER_ID_NOT_NULL
 	}
 
 	var conversationPO po.ConversationPO
-	if err := a.db.WithContext(ctx).Model(&po.ConversationPO{}).Where("conversation_id = ? AND user_id = ?", conversationID, userID).First(&conversationPO).Error; err != nil {
+	query := a.db.WithContext(ctx).Model(&po.ConversationPO{}).Where("conversation_id = ?", conversationID)
+
+	// userID 为空时不进行用户ID过滤（用于导出场景）
+	if userID != "" {
+		query = query.Where("user_id = ?", userID)
+	}
+
+	if err := query.First(&conversationPO).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, aichatservice.CONVERSATION_NOT_EXIST
 		}
