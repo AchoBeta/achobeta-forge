@@ -740,6 +740,56 @@ func (u *UserServiceImpl) UpdateAvatar(ctx context.Context, userID, avatarURL st
 	return nil
 }
 
+// UpdateUserName 更新用户名
+func (u *UserServiceImpl) UpdateUserName(ctx context.Context, userID, newUserName string) error {
+	// 参数校验
+	if userID == "" {
+		zlog.CtxErrorf(ctx, "invalid params for update username: userID is empty")
+		return ErrInvalidParams
+	}
+	newUserName = strings.TrimSpace(newUserName)
+	if newUserName == "" {
+		zlog.CtxErrorf(ctx, "invalid params for update username: newUserName is empty")
+		return ErrInvalidParams
+	}
+
+	// 检查用户名长度
+	if len(newUserName) > 50 {
+		zlog.CtxErrorf(ctx, "username too long: %s", newUserName)
+		return ErrInvalidParams
+	}
+
+	// 检查用户名是否已被其他用户使用
+	query := repo.NewUserQueryByName(newUserName)
+	existingUser, err := u.userRepo.GetUser(ctx, query)
+	if err != nil {
+		zlog.CtxErrorf(ctx, "failed to check if username exists: %v", err)
+		return ErrInternalError
+	}
+	if existingUser != nil && existingUser.UserID != userID {
+		zlog.CtxWarnf(ctx, "username already in use: %s", newUserName)
+		return ErrAccountAlreadyInUse // 建议定义并使用更明确的错误，如 ErrUserNameInUse
+	}
+	// 检查用户是否存在
+	_, err = u.GetUserByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	// 更新用户名
+	updateInfo := &repo.UserUpdateInfo{
+		UserID:   userID,
+		UserName: &newUserName,
+	}
+	if err := u.userRepo.UpdateUser(ctx, updateInfo); err != nil {
+		zlog.CtxErrorf(ctx, "update username failed: %v", err)
+		return ErrInternalError
+	}
+
+	zlog.CtxInfof(ctx, "username updated successfully, userID: %s, newUserName: %s", userID, newUserName)
+	return nil
+}
+
 // validateAvatarURL URL验证函数
 // 注意：移除了路径格式强制检查（原 /user/{userID}/avatar/），允许使用外部服务
 // 如果需要对自有存储路径进行限制，应该在存储访问层（COS IAM策略）实现

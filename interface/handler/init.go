@@ -22,6 +22,8 @@ type IHandler interface {
 	UnbindAccount(ctx context.Context, req *def.UnbindAccountReq) (rsp *def.UnbindAccountResp, err error)
 	// UpdateAvatar: 更新头像
 	UpdateAvatar(ctx context.Context, req *def.UpdateAvatarReq) (rsp *def.UpdateAvatarResp, err error)
+	// UpdateUserName: 更新用户名
+	UpdateUserName(ctx context.Context, req *def.UpdateUserNameReq) (rsp *def.UpdateUserNameResp, err error)
 
 	// MindMap: 思维导图相关接口
 	CreateMindMap(ctx context.Context, req *def.CreateMindMapReq) (rsp *def.CreateMindMapResp, err error)
@@ -29,6 +31,7 @@ type IHandler interface {
 	ListMindMaps(ctx context.Context, req *def.ListMindMapsReq) (rsp *def.ListMindMapsResp, err error)
 	UpdateMindMap(ctx context.Context, mapID string, req *def.UpdateMindMapReq) (rsp *def.UpdateMindMapResp, err error)
 	DeleteMindMap(ctx context.Context, mapID string) (rsp *def.DeleteMindMapResp, err error)
+	BatchDeleteMindMap(ctx context.Context, req *def.BatchDeleteMindMapReq) (rsp *def.BatchDeleteMindMapResp, err error)
 
 	// COS: OSS凭证相关接口
 	GetOSSCredentials(ctx context.Context, req *def.GetOSSCredentialsReq) (rsp *def.GetOSSCredentialsResp, err error)
@@ -47,10 +50,9 @@ type IHandler interface {
 	GetGenerationBatch(ctx context.Context, batchID string) (rsp *def.GetGenerationBatchResp, err error)
 	LabelGenerationResult(ctx context.Context, resultID string, req *def.LabelGenerationResultReq) (rsp *def.LabelGenerationResultResp, err error)
 	ListUserGenerationBatches(ctx context.Context, req *def.ListUserGenerationBatchesReq) (rsp *def.ListUserGenerationBatchesResp, err error)
-	ExportSFTData(ctx context.Context, req *def.ExportSFTDataReq) (rsp *def.ExportSFTDataResp, err error)
-	ExportSFTDataToFile(ctx context.Context, req *def.ExportSFTDataReq) (rsp *def.ExportSFTDataToFileResp, err error)
+	ExportSFTDataToFile(ctx context.Context, req *def.ExportSFTDataReq) (jsonlData string, filename string, err error)
+	ExportSFTSessionDataToFile(ctx context.Context, req *def.ExportSFTDataReq) (jsonlData string, filename string, err error)
 	ExportDPOData(ctx context.Context, req *def.ExportSFTDataReq) (string, error)
-	GetSFTJSONLData(ctx context.Context, req *def.ExportSFTDataReq) (string, error)
 }
 
 var handler IHandler

@@ -122,6 +122,10 @@ func loadUserAuthService(r *gin.RouterGroup) {
 	// 更新头像接口（改为POST，因为要上传文件）
 	// [POST] /api/biz/v1/user/avatar
 	r.Handle(POST, "avatar", UpdateAvatar())
+
+	// 更新用户名接口
+	// [POST] /api/biz/v1/user/username
+	r.Handle(POST, "username", UpdateUserName())
 }
 
 func loadMindMapService(r *gin.RouterGroup) {
@@ -141,9 +145,9 @@ func loadMindMapService(r *gin.RouterGroup) {
 	// [PUT] /api/biz/v1/mindmap/:id
 	r.Handle(PUT, ":id", UpdateMindMap())
 
-	// 删除思维导图
-	// [DELETE] /api/biz/v1/mindmap/:id
-	r.Handle(DELETE, ":id", DeleteMindMap())
+	// 批量删除思维导图
+	// [POST] /api/biz/v1/mindmap/batch_delete
+	r.Handle(POST, "batch_delete", BatchDeleteMindMap())
 }
 
 func loadCOSService(r *gin.RouterGroup) {

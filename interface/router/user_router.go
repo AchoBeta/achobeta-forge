@@ -364,6 +364,29 @@ func UpdateAvatar() gin.HandlerFunc {
 	}
 }
 
+// UpdateUserName
+//
+//	@Description:[POST] /api/biz/v1/user/username
+//	@return gin.HandlerFunc
+func UpdateUserName() gin.HandlerFunc {
+	return func(gCtx *gin.Context) {
+		req := &def.UpdateUserNameReq{}
+		ctx := gCtx.Request.Context()
+
+		if err := gCtx.ShouldBindJSON(req); err != nil {
+			gCtx.JSON(http.StatusOK, response.JsonMsgResult{
+				Code:    response.INVALID_PARAMS.Code,
+				Message: response.INVALID_PARAMS.Msg,
+				Data:    def.UpdateUserNameResp{Success: false},
+			})
+			return
+		}
+
+		rsp, err := handler.GetHandler().UpdateUserName(ctx, req)
+		handleHandlerResponse(gCtx, rsp, err, def.UpdateUserNameResp{Success: false})
+	}
+}
+
 // loadOAuthService 加载 OAuth 第三方登录路由
 func loadOAuthService(r *gin.RouterGroup) {
 	// 获取 UserService（从 handler 中获取）

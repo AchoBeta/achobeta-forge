@@ -41,7 +41,6 @@ func ParseFile(ctx context.Context, fh *multipart.FileHeader) (text string, err 
 	if !supportedExtensions[ext] {
 		return "", fmt.Errorf("unsupported file extension: %s", ext)
 	}
-
 	mime, err := fileHeaderMime(fh)
 	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) {
 		zlog.CtxErrorf(ctx, "failed to detect MIME type for file %s: %v", fh.Filename, err)

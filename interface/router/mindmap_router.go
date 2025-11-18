@@ -11,6 +11,7 @@ import (
 	"forge/interface/def"
 	"forge/interface/handler"
 	"forge/pkg/log/zlog"
+
 	// "forge/pkg/loop"
 	"forge/pkg/response"
 )
@@ -249,6 +250,46 @@ func DeleteMindMap() gin.HandlerFunc {
 				Code:    msgCode.Code,
 				Message: msgCode.Msg,
 				Data:    def.DeleteMindMapResp{Success: false},
+			})
+			return
+		} else {
+			r.Success(rsp)
+		}
+	}
+}
+
+// BatchDeleteMindMap
+//
+//	@Description:[POST] /api/biz/v1/mindmap/batch_delete
+//	@return gin.HandlerFunc
+func BatchDeleteMindMap() gin.HandlerFunc {
+	return func(gCtx *gin.Context) {
+		req := &def.BatchDeleteMindMapReq{}
+		ctx := gCtx.Request.Context()
+
+		// 绑定JSON请求体
+		if err := gCtx.ShouldBindJSON(req); err != nil {
+			gCtx.JSON(http.StatusOK, response.JsonMsgResult{
+				Code:    response.INVALID_PARAMS.Code,
+				Message: response.INVALID_PARAMS.Msg,
+				Data:    def.BatchDeleteMindMapResp{Success: false},
+			})
+			return
+		}
+
+		// TODO: cozeloop配置好后启用
+		// ctx, sp := loop.GetNewSpan(ctx, "batch_delete_mindmap", constant.LoopSpanType_Root)
+		rsp, err := handler.GetHandler().BatchDeleteMindMap(ctx, req)
+		// loop.SetSpanAllInOne(ctx, sp, req, rsp, err)
+		zlog.CtxAllInOne(ctx, "batch_delete_mindmap", req, rsp, err)
+
+		r := response.NewResponse(gCtx)
+		if err != nil {
+			msgCode := mapMindMapServiceErrorToMsgCode(err)
+			gCtx.JSON(http.StatusOK, response.JsonMsgResult{
+				Code:    msgCode.Code,
+				Message: msgCode.Msg,
+				Data:    def.BatchDeleteMindMapResp{Success: false},
 			})
 			return
 		} else {

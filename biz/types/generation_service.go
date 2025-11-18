@@ -29,14 +29,15 @@ type IGenerationService interface {
 	// LabelResultWithSave 标记结果并可能保存导图
 	LabelResultWithSave(ctx context.Context, resultID string, label int) (*entity.MindMap, error)
 
-	// ExportSFTData 导出SFT数据
-	ExportSFTData(ctx context.Context, startDate, endDate, userID string) (string, error)
-
 	// ExportDPOData 导出DPO数据
 	ExportDPOData(ctx context.Context, startDate, endDate, userID string) (string, error)
 
-	// ExportSFTDataToFile 导出SFT数据到文件
-	ExportSFTDataToFile(ctx context.Context, startDate, endDate, userID string) (string, error)
+	// ExportSFTDataToFile 导出SFT数据到文件（支持loss_weight筛选）
+	// 返回：jsonlData, filename, error
+	ExportSFTDataToFile(ctx context.Context, startDate, endDate, userID string, minLossWeight float64) (string, string, error)
+
+	// ExportSFTSessionDataToFile 导出session格式的SFT数据文件
+	ExportSFTSessionDataToFile(ctx context.Context, startDate, endDate, userID string, minLossWeight float64) (string, string, error)
 
 	// SaveSelectedMindMap 保存选中的导图到正式系统
 	SaveSelectedMindMap(ctx context.Context, resultID string) (*entity.MindMap, error)

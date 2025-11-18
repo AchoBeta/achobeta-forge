@@ -71,3 +71,16 @@ type UpdateMindMapResp struct {
 type DeleteMindMapResp struct {
 	Success bool `json:"success"`
 }
+
+// 批量删除请求
+type BatchDeleteMindMapReq struct {
+	MapIDs []string `json:"mapIds" binding:"required,min=1,max=100,dive,required"`
+}
+
+// 批量删除响应
+type BatchDeleteMindMapResp struct {
+	Success      bool     `json:"success"`
+	DeletedCount int      `json:"deletedCount"`
+	FailedCount  int      `json:"failedCount"`
+	FailedMapIDs []string `json:"failedMapIds,omitempty"`
+}
