@@ -24,6 +24,7 @@ type AiChatClient struct {
 	ModelName    string
 	Agent        compose.Runnable[[]*schema.Message, types.AgentResponse]
 	ToolAiClient *ark.ChatModel
+	ArkClient    *arkruntime.Client
 }
 
 type State struct {
@@ -58,6 +59,7 @@ func NewAiChatClient(apiKey, modelName string) repo.EinoServer {
 	aiChatClient.ApiKey = apiKey
 	aiChatClient.ModelName = modelName
 	aiChatClient.ToolAiClient = toolModel
+	aiChatClient.ArkClient = arkruntime.NewClientWithApiKey(apiKey) // 初始化火山引擎客户端，复用避免重复创建
 
 	//构建agent
 	aiChatModel, err := ark.NewChatModel(ctx, &ark.ChatModelConfig{
@@ -247,8 +249,8 @@ func (a *AiChatClient) generateWithStructuredOutput(
 	messages []*schema.Message,
 	jsonSchema map[string]interface{},
 ) (*schema.Message, error) {
-	// 创建火山引擎客户端
-	client := arkruntime.NewClientWithApiKey(a.ApiKey)
+	// 使用复用的火山引擎客户端
+	client := a.ArkClient
 
 	// 转换消息格式
 	arkMessages := make([]*arkmodel.ChatCompletionMessage, 0, len(messages))
@@ -303,8 +305,9 @@ func (a *AiChatClient) generateWithStructuredOutput(
 		return nil, errors.New("API返回结果为空")
 	}
 
-	// 提取返回内容
-	messageContent := resp.Choices[0].Message.Content
+	// 提取返回内容（增加健壮性检查）
+	choice := resp.Choices[0]
+	messageContent := choice.Message.Content
 	var contentStr string
 	if messageContent.StringValue != nil {
 		contentStr = *messageContent.StringValue
