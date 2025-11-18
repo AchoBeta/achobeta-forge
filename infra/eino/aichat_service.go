@@ -44,7 +44,7 @@ func NewAiChatClient(apiKey, modelName string) repo.EinoServer {
 	toolModel, err := ark.NewChatModel(ctx, &ark.ChatModelConfig{
 		APIKey:   apiKey,
 		Model:    modelName,
-		Thinking: &model.Thinking{Type: model.ThinkingTypeDisabled},
+		Thinking: &model.Thinking{Type: model.ThinkingTypeEnabled},
 	})
 	if toolModel == nil || err != nil {
 		zlog.Errorf("ToolAi模型连接失败: %v", err)
