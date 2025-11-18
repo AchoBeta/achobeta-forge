@@ -659,13 +659,13 @@ func (g *GenerationService) calculatePairScore(positive, negative *entity.Genera
 
 // buildDPORecord 构建DPO记录
 func (g *GenerationService) buildDPORecord(ctx context.Context, positive, negative *entity.GenerationResult, userID string) (string, error) {
-	// 获取正样本对话
+	// 获取正样本对话（userID 为空时不过滤用户）
 	positiveConversation, err := g.aiChatRepo.GetConversation(ctx, positive.ConversationID, userID)
 	if err != nil {
 		return "", fmt.Errorf("获取正样本对话失败: %w", err)
 	}
 
-	// 获取负样本对话用于校验
+	// 获取负样本对话用于校验（userID 为空时不过滤用户）
 	negativeConversation, err := g.aiChatRepo.GetConversation(ctx, negative.ConversationID, userID)
 	if err != nil {
 		return "", fmt.Errorf("获取负样本对话失败: %w", err)
@@ -874,12 +874,16 @@ func (g *GenerationService) ExportSFTSessionDataToFile(ctx context.Context, star
 
 	timestamp := time.Now().Format("20060102_150405")
 	var filename string
+	userIDStr := "all"
+	if userID != "" {
+		userIDStr = userID
+	}
 	if minLossWeight >= 1.0 {
-		filename = fmt.Sprintf("SFT_Simple_Human_Only_%s_%s.jsonl", userID, timestamp)
+		filename = fmt.Sprintf("SFT_Simple_Human_Only_%s_%s.jsonl", userIDStr, timestamp)
 	} else if minLossWeight >= 0.5 {
-		filename = fmt.Sprintf("SFT_Simple_Mixed_%.1f_%s_%s.jsonl", minLossWeight, userID, timestamp)
+		filename = fmt.Sprintf("SFT_Simple_Mixed_%.1f_%s_%s.jsonl", minLossWeight, userIDStr, timestamp)
 	} else {
-		filename = fmt.Sprintf("SFT_Simple_All_%.1f_%s_%s.jsonl", minLossWeight, userID, timestamp)
+		filename = fmt.Sprintf("SFT_Simple_All_%.1f_%s_%s.jsonl", minLossWeight, userIDStr, timestamp)
 	}
 
 	return jsonlData, filename, nil
