@@ -2,6 +2,7 @@ package eino
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"forge/biz/entity"
@@ -18,10 +19,11 @@ import (
 )
 
 type AiChatClient struct {
-	ApiKey       string
-	ModelName    string
-	Agent        compose.Runnable[[]*schema.Message, types.AgentResponse]
-	ToolAiClient *ark.ChatModel
+	ApiKey              string
+	ModelName           string
+	Agent               compose.Runnable[[]*schema.Message, types.AgentResponse]
+	ToolAiClient        *ark.ChatModel
+	GenerateMapAiClient *ark.ChatModel
 }
 
 type State struct {
@@ -36,6 +38,17 @@ func initState(ctx context.Context) *State {
 }
 
 func NewAiChatClient(apiKey, modelName string) repo.EinoServer {
+
+	var toolSchemaMap map[string]interface{}
+	if err := json.Unmarshal([]byte(mindMapSchemaString), &toolSchemaMap); err != nil {
+		panic(fmt.Sprintf("Schema解析失败: %v", err))
+	}
+
+	var generateSchemaMap map[string]interface{}
+	if err := json.Unmarshal([]byte(generateMindMapSchemaString), &generateSchemaMap); err != nil {
+		panic(fmt.Sprintf("Schema解析失败: %v", err))
+	}
+
 	ctx := context.Background()
 
 	var aiChatClient AiChatClient
@@ -45,10 +58,33 @@ func NewAiChatClient(apiKey, modelName string) repo.EinoServer {
 		APIKey:   apiKey,
 		Model:    modelName,
 		Thinking: &model.Thinking{Type: model.ThinkingTypeEnabled},
+		ResponseFormat: &ark.ResponseFormat{Type: model.ResponseFormatJSONSchema, JSONSchema: &model.ResponseFormatJSONSchemaJSONSchemaParam{
+			Name:        "mindmap_editor",
+			Description: "思维导图编辑机器人输出，输出单行json，不允许有任何换行",
+			Schema:      toolSchemaMap,
+			Strict:      true,
+		}},
 	})
 	if toolModel == nil || err != nil {
 		zlog.Errorf("ToolAi模型连接失败: %v", err)
 		panic(fmt.Errorf("ToolAi模型连接失败: %v", err))
+	}
+
+	generateModel, err := ark.NewChatModel(ctx, &ark.ChatModelConfig{
+		APIKey:   apiKey,
+		Model:    modelName,
+		Thinking: &model.Thinking{Type: model.ThinkingTypeEnabled},
+		ResponseFormat: &ark.ResponseFormat{Type: model.ResponseFormatJSONSchema, JSONSchema: &model.ResponseFormatJSONSchemaJSONSchemaParam{
+			Name:        "mindmap_generator",
+			Description: "思维导图生成机器人输出，输出单行json，不允许有任何换行",
+			Schema:      generateSchemaMap,
+			Strict:      true,
+		}},
+	})
+
+	if generateModel == nil || err != nil {
+		zlog.Errorf("generateModel模型连接失败: %v", err)
+		panic(fmt.Errorf("generateModel模型连接失败: %v", err))
 	}
 
 	//toolAiClient = toolModel
@@ -56,6 +92,7 @@ func NewAiChatClient(apiKey, modelName string) repo.EinoServer {
 	aiChatClient.ApiKey = apiKey
 	aiChatClient.ModelName = modelName
 	aiChatClient.ToolAiClient = toolModel
+	aiChatClient.GenerateMapAiClient = generateModel
 
 	//构建agent
 	aiChatModel, err := ark.NewChatModel(ctx, &ark.ChatModelConfig{
@@ -215,7 +252,7 @@ func (a *AiChatClient) SendMessage(ctx context.Context, messages []*entity.Messa
 func (a *AiChatClient) GenerateMindMap(ctx context.Context, text, userID string) (string, error) {
 	message := initGenerateMindMapMessage(text, userID)
 
-	resp, err := a.ToolAiClient.Generate(ctx, message)
+	resp, err := a.GenerateMapAiClient.Generate(ctx, message)
 	if err != nil {
 		zlog.Errorf("模型调用失败%v", err)
 		return "", err

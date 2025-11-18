@@ -203,6 +203,7 @@ type AiChatConfig struct {
 	SystemPrompt         string `mapstructure:"system_prompt"`
 	UpdateSystemPrompt   string `mapstructure:"update_system_prompt"`
 	GenerateSystemPrompt string `mapstructure:"generate_system_prompt"`
+	//UpdateJsonSchema     string `mapstructure:"update_json_schema"`
 }
 
 type SMSConfig struct {
@@ -213,6 +214,7 @@ type SMSConfig struct {
 type UniOfficeConfig struct {
 	MeteredKey string `mapstructure:"metered_key"`
 }
+
 // OAuthConfig OAuth 第三方登录配置
 type OAuthConfig struct {
 	GitHubClientID     string `mapstructure:"github_client_id"`
