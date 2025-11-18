@@ -15,7 +15,8 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
-	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
+	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
+	arkmodel "github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 )
 
 type AiChatClient struct {
@@ -45,7 +46,7 @@ func NewAiChatClient(apiKey, modelName string) repo.EinoServer {
 	toolModel, err := ark.NewChatModel(ctx, &ark.ChatModelConfig{
 		APIKey:   apiKey,
 		Model:    modelName,
-		Thinking: &model.Thinking{Type: model.ThinkingTypeDisabled},
+		Thinking: &arkmodel.Thinking{Type: arkmodel.ThinkingTypeDisabled},
 	})
 	if toolModel == nil || err != nil {
 		zlog.Errorf("ToolAi模型连接失败: %v", err)
@@ -62,7 +63,7 @@ func NewAiChatClient(apiKey, modelName string) repo.EinoServer {
 	aiChatModel, err := ark.NewChatModel(ctx, &ark.ChatModelConfig{
 		APIKey:   apiKey,
 		Model:    modelName,
-		Thinking: &model.Thinking{Type: model.ThinkingTypeDisabled},
+		Thinking: &arkmodel.Thinking{Type: arkmodel.ThinkingTypeDisabled},
 	})
 	if aiChatModel == nil || err != nil {
 		zlog.Errorf("ai模型连接失败: %v", err)
@@ -212,15 +213,21 @@ func (a *AiChatClient) SendMessage(ctx context.Context, messages []*entity.Messa
 	return resp, nil
 }
 
-// 传入文本生成导图
+// 传入文本生成导图（使用结构化输出确保 JSON 格式准确）
 func (a *AiChatClient) GenerateMindMap(ctx context.Context, text, userID string) (string, error) {
-	message := initGenerateMindMapMessage(text, userID)
+	// 使用与批量生成相同的结构化输出方式
+	messages := initGenerateMindMapMessage(text, userID)
 
-	resp, err := a.ToolAiClient.Generate(ctx, message)
+	// 获取 JSON Schema
+	mindMapSchema := generationservice.GetMindMapJSONSchema()
+
+	// 使用结构化输出调用 API
+	resp, err := a.generateWithStructuredOutput(ctx, messages, mindMapSchema)
 	if err != nil {
-		zlog.Errorf("模型调用失败%v", err)
+		zlog.CtxErrorf(ctx, "模型调用失败: %v", err)
 		return "", err
 	}
+
 	return resp.Content, nil
 }
 
@@ -233,11 +240,94 @@ func (a *AiChatClient) GenerateMindMapBatch(ctx context.Context, text, userID st
 	}
 }
 
-// TODO：对于dpo还没去调用，对于数据的生成，不知道是不是通过提示词使得内容产生对比性 还是 格式的对比
-// generateForSFTTraining 策略1：SFT训练数据策略 - 并行生成+temperature控制多样性
+// generateWithStructuredOutput 使用结构化输出调用火山引擎 API
+// 直接使用 volcengine-go-sdk 以支持 response_format 参数
+func (a *AiChatClient) generateWithStructuredOutput(
+	ctx context.Context,
+	messages []*schema.Message,
+	jsonSchema map[string]interface{},
+) (*schema.Message, error) {
+	// 创建火山引擎客户端
+	client := arkruntime.NewClientWithApiKey(a.ApiKey)
+
+	// 转换消息格式
+	arkMessages := make([]*arkmodel.ChatCompletionMessage, 0, len(messages))
+	for _, msg := range messages {
+		role := ""
+		switch msg.Role {
+		case schema.System:
+			role = "system"
+		case schema.User:
+			role = "user"
+		case schema.Assistant:
+			role = "assistant"
+		default:
+			role = "user"
+		}
+		// ChatCompletionMessageContent 需要包装字符串
+		content := &arkmodel.ChatCompletionMessageContent{
+			StringValue: &msg.Content,
+		}
+		arkMessages = append(arkMessages, &arkmodel.ChatCompletionMessage{
+			Role:    role,
+			Content: content,
+		})
+	}
+
+	// 构建结构化输出配置
+	responseFormat := &arkmodel.ResponseFormat{
+		Type: arkmodel.ResponseFormatJSONSchema,
+		JSONSchema: &arkmodel.ResponseFormatJSONSchemaJSONSchemaParam{
+			Name:        "mindmap_schema",
+			Description: "思维导图JSON结构，包含title、desc、layout和递归的root节点树",
+			Schema:      jsonSchema,
+			Strict:      true, // 严格模式，确保格式完全符合
+		},
+	}
+
+	// 构建请求（使用 CreateChatCompletionRequest 替代已废弃的 ChatCompletionRequest）
+	request := arkmodel.CreateChatCompletionRequest{
+		Model:          a.ModelName,
+		Messages:       arkMessages,
+		ResponseFormat: responseFormat,
+		Thinking:       &arkmodel.Thinking{Type: arkmodel.ThinkingTypeDisabled},
+	}
+
+	// 调用 API
+	resp, err := client.CreateChatCompletion(ctx, request)
+	if err != nil {
+		return nil, fmt.Errorf("结构化输出调用失败: %w", err)
+	}
+
+	if len(resp.Choices) == 0 {
+		return nil, errors.New("API返回结果为空")
+	}
+
+	// 提取返回内容
+	messageContent := resp.Choices[0].Message.Content
+	var contentStr string
+	if messageContent.StringValue != nil {
+		contentStr = *messageContent.StringValue
+	} else if len(messageContent.ListValue) > 0 && messageContent.ListValue[0].Text != "" {
+		contentStr = messageContent.ListValue[0].Text
+	} else {
+		return nil, errors.New("API返回内容格式不正确")
+	}
+
+	return &schema.Message{
+		Content: contentStr,
+		Role:    schema.Assistant,
+	}, nil
+}
+
+// generateForSFTTraining 策略1：SFT训练数据策略 - 并行生成+结构化输出
+// 使用结构化输出确保 JSON 格式准确率
 func (a *AiChatClient) generateForSFTTraining(ctx context.Context, text, userID string, count int) ([]string, []*entity.Conversation, error) {
-	// 使用标准System Prompt（方案：生成时直接使用，无需后期替换）
+	// 使用标准System Prompt（已简化，无需格式要求）
 	sftSystemPrompt := generationservice.SFTStandardSystemPrompt
+
+	// 获取 JSON Schema
+	mindMapSchema := generationservice.GetMindMapJSONSchema()
 
 	// 并行生成结果通道
 	type generationResult struct {
@@ -262,11 +352,8 @@ func (a *AiChatClient) generateForSFTTraining(ctx context.Context, text, userID 
 				},
 			}
 
-			// 关键优化：通过并行生成实现多样性
-			// 每次独立调用模型，利用模型内在的随机性产生不同结果
-			// 符合火山最佳实践：多样性来自采样随机性，而非prompt扰动
-			// TODO: 如需进一步控制多样性，可在中配置temperature参数，当前并行应该也有一定的随机性，就是不知道api能不能承受着
-			resp, err := a.ToolAiClient.Generate(ctx, messages)
+			// 使用结构化输出调用 API，确保 JSON 格式准确
+			resp, err := a.generateWithStructuredOutput(ctx, messages, mindMapSchema)
 
 			if err != nil {
 				zlog.CtxWarnf(ctx, "并行生成失败 index:%d, err:%v", index, err)
@@ -312,7 +399,7 @@ func (a *AiChatClient) generateForSFTTraining(ctx context.Context, text, userID 
 		return nil, nil, errors.New("所有并行生成都失败了")
 	}
 
-	zlog.CtxInfof(ctx, "SFT策略完成：并行生成 %d 个样本", len(results))
+	zlog.CtxInfof(ctx, "SFT策略完成：并行生成 %d 个样本（使用结构化输出）", len(results))
 	return results, conversations, nil
 }
 
