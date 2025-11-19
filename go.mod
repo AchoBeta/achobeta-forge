@@ -90,6 +90,7 @@ require (
 	github.com/nikolalohinski/gonja v1.5.3 // indirect
 	github.com/nikolalohinski/gonja/v2 v2.3.1 // indirect
 	github.com/openai/openai-go v1.10.1 // indirect
+	github.com/panjf2000/ants/v2 v2.11.3 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/perimeterx/marshmallow v1.1.4 // indirect
 	github.com/pkg/errors v0.9.2-0.20201214064552-5dd12d0cfe7f // indirect
@@ -97,6 +98,7 @@ require (
 	github.com/quic-go/qpack v0.5.1 // indirect
 	github.com/quic-go/quic-go v0.54.0 // indirect
 	github.com/richardlehane/msoleps v1.0.4 // indirect
+	github.com/robfig/cron/v3 v3.0.1 // indirect
 	github.com/sagikazarmark/locafero v0.4.0 // indirect
 	github.com/sagikazarmark/slog-shim v0.1.0 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect

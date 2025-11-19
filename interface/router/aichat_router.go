@@ -2,13 +2,15 @@ package router
 
 import (
 	"errors"
+	"fmt"
 	"forge/biz/aichatservice"
 	"forge/interface/def"
 	"forge/interface/handler"
 	"forge/pkg/log/zlog"
 	"forge/pkg/response"
-	"github.com/gin-gonic/gin"
 	"net/http"
+
+	"github.com/gin-gonic/gin"
 )
 
 func aiChatServiceErrorToMsgCode(err error) response.MsgCode {
@@ -317,5 +319,134 @@ func GenerateMindMap() gin.HandlerFunc {
 			r.Success(resp)
 		}
 
+	}
+}
+
+// TabComplete Tab补全路由处理
+func TabComplete() gin.HandlerFunc {
+	return func(gCtx *gin.Context) {
+		var req def.TabCompletionRequest
+		ctx := gCtx.Request.Context()
+
+		if err := gCtx.ShouldBindJSON(&req); err != nil {
+			gCtx.JSON(http.StatusOK, response.JsonMsgResult{
+				Code:    response.PARAM_NOT_COMPLETE.Code,
+				Message: response.PARAM_NOT_COMPLETE.Msg,
+				Data:    def.TabCompletionResponse{Success: false},
+			})
+			return
+		}
+
+		resp, err := handler.GetHandler().TabComplete(ctx, &req)
+
+		zlog.CtxAllInOne(ctx, "tab_complete", map[string]interface{}{"req": req}, resp, err)
+
+		r := response.NewResponse(gCtx)
+		if err != nil {
+			msgCode := aiChatServiceErrorToMsgCode(err)
+			if msgCode == response.COMMON_FAIL {
+				msgCode.Msg = err.Error()
+			}
+			gCtx.JSON(http.StatusOK, response.JsonMsgResult{
+				Code:    msgCode.Code,
+				Message: msgCode.Msg,
+				Data:    def.TabCompletionResponse{Success: false},
+			})
+			return
+		} else {
+			r.Success(resp)
+		}
+	}
+}
+
+// ExportQualityData 导出质量数据路由处理
+func ExportQualityData() gin.HandlerFunc {
+	return func(gCtx *gin.Context) {
+		var req def.ExportQualityDataRequest
+		ctx := gCtx.Request.Context()
+
+		// 从查询参数绑定
+		if err := gCtx.ShouldBindQuery(&req); err != nil {
+			gCtx.JSON(http.StatusOK, response.JsonMsgResult{
+				Code:    response.PARAM_NOT_COMPLETE.Code,
+				Message: response.PARAM_NOT_COMPLETE.Msg,
+				Data:    def.ExportQualityDataResponse{Success: false},
+			})
+			return
+		}
+
+		resp, err := handler.GetHandler().ExportQualityData(ctx, &req)
+
+		zlog.CtxAllInOne(ctx, "export_quality_data", map[string]interface{}{"req": req}, resp, err)
+
+		if err != nil {
+			msgCode := aiChatServiceErrorToMsgCode(err)
+			if msgCode == response.COMMON_FAIL {
+				msgCode.Msg = err.Error()
+			}
+			gCtx.JSON(http.StatusOK, response.JsonMsgResult{
+				Code:    msgCode.Code,
+				Message: msgCode.Msg,
+				Data:    def.ExportQualityDataResponse{Success: false},
+			})
+			return
+		}
+
+		// 对于导出功能，设置下载响应头
+		gCtx.Header("Content-Type", "application/x-ndjson")
+		gCtx.Header("Content-Disposition", "attachment; filename=\"tab_completion_training_data.jsonl\"")
+		gCtx.Header("Content-Length", fmt.Sprintf("%d", len(resp.Data)))
+
+		// 直接返回JSONL内容
+		gCtx.String(http.StatusOK, resp.Data)
+	}
+}
+
+// TriggerQualityAssessment 手动触发质量评估路由处理
+func TriggerQualityAssessment() gin.HandlerFunc {
+	return func(gCtx *gin.Context) {
+		var req def.TriggerQualityAssessmentRequest
+		ctx := gCtx.Request.Context()
+
+		// 从查询参数或JSON绑定
+		if gCtx.ContentType() == "application/json" {
+			if err := gCtx.ShouldBindJSON(&req); err != nil {
+				gCtx.JSON(http.StatusOK, response.JsonMsgResult{
+					Code:    response.PARAM_NOT_COMPLETE.Code,
+					Message: response.PARAM_NOT_COMPLETE.Msg,
+					Data:    def.TriggerQualityAssessmentResponse{Success: false},
+				})
+				return
+			}
+		} else {
+			if err := gCtx.ShouldBindQuery(&req); err != nil {
+				gCtx.JSON(http.StatusOK, response.JsonMsgResult{
+					Code:    response.PARAM_NOT_COMPLETE.Code,
+					Message: response.PARAM_NOT_COMPLETE.Msg,
+					Data:    def.TriggerQualityAssessmentResponse{Success: false},
+				})
+				return
+			}
+		}
+
+		resp, err := handler.GetHandler().TriggerQualityAssessment(ctx, &req)
+
+		zlog.CtxAllInOne(ctx, "trigger_quality_assessment", map[string]interface{}{"req": req}, resp, err)
+
+		r := response.NewResponse(gCtx)
+		if err != nil {
+			msgCode := aiChatServiceErrorToMsgCode(err)
+			if msgCode == response.COMMON_FAIL {
+				msgCode.Msg = err.Error()
+			}
+			gCtx.JSON(http.StatusOK, response.JsonMsgResult{
+				Code:    msgCode.Code,
+				Message: msgCode.Msg,
+				Data:    def.TriggerQualityAssessmentResponse{Success: false},
+			})
+			return
+		} else {
+			r.Success(resp)
+		}
 	}
 }

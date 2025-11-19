@@ -8,10 +8,14 @@ import (
 	"forge/biz/entity"
 	"forge/biz/repo"
 	"forge/biz/types"
+	"forge/infra/eino"
 	"forge/pkg/log/zlog"
+	"forge/pkg/queue"
 	"forge/util"
+	"math/rand"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 var (
@@ -25,12 +29,19 @@ var (
 )
 
 type AiChatService struct {
-	aiChatRepo repo.AiChatRepo
-	einoServer repo.EinoServer
+	aiChatRepo          repo.AiChatRepo
+	einoServer          repo.EinoServer
+	tabCompletionClient *eino.TabCompletionClient
+	qualityClient       *eino.QualityAssessmentClient
 }
 
 func NewAiChatService(aiChatRepo repo.AiChatRepo, einoServer repo.EinoServer) *AiChatService {
-	return &AiChatService{aiChatRepo: aiChatRepo, einoServer: einoServer}
+	return &AiChatService{
+		aiChatRepo:          aiChatRepo,
+		einoServer:          einoServer,
+		tabCompletionClient: eino.NewTabCompletionClient(),
+		qualityClient:       eino.NewQualityAssessmentClient(),
+	}
 }
 
 func (a *AiChatService) ProcessUserMessage(ctx context.Context, req *types.ProcessUserMessageParams) (types.AgentResponse, error) {
@@ -53,7 +64,10 @@ func (a *AiChatService) ProcessUserMessage(ctx context.Context, req *types.Proce
 	conversation.ProcessSystemPrompt()
 
 	//添加用户聊天记录
-	conversation.AddMessage(req.Message, entity.USER, "", nil)
+	userMessage, addMsgErr := conversation.AddMessage(req.Message, entity.USER, "", nil)
+	if addMsgErr != nil {
+		zlog.CtxWarnf(ctx, "添加用户消息时出现警告: %v", addMsgErr)
+	}
 
 	//调用ai 返回ai消息
 	aiMsg, err := a.einoServer.SendMessage(ctx, conversation.Messages)
@@ -62,15 +76,50 @@ func (a *AiChatService) ProcessUserMessage(ctx context.Context, req *types.Proce
 	}
 
 	//添加ai消息
-	conversation.AddMessage(aiMsg.Content, entity.ASSISTANT, "", aiMsg.ToolCalls)
+	_, addAiMsgErr := conversation.AddMessage(aiMsg.Content, entity.ASSISTANT, "", aiMsg.ToolCalls)
+	if addAiMsgErr != nil {
+		zlog.CtxWarnf(ctx, "添加AI消息时出现警告: %v", addAiMsgErr)
+	}
 	if aiMsg.NewMapJson != "" {
-		conversation.AddMessage(aiMsg.NewMapJson, entity.TOOL, aiMsg.ToolCallID, nil)
+		_, addToolMsgErr := conversation.AddMessage(aiMsg.NewMapJson, entity.TOOL, aiMsg.ToolCallID, nil)
+		if addToolMsgErr != nil {
+			zlog.CtxWarnf(ctx, "添加工具消息时出现警告: %v", addToolMsgErr)
+		}
 	}
 
 	//更新会话聊天记录
 	err = a.aiChatRepo.UpdateConversationMessage(ctx, conversation)
 	if err != nil {
 		return types.AgentResponse{}, err
+	}
+
+	// 只对真实用户对话进行质量评估，排除SFT训练数据
+	// 使用随机沉睡+重试的简化方案
+	if conversation.IsRealUserConversation() {
+		// 将用户消息加入质量评估队列（异步处理，不影响聊天响应）
+		go func() {
+			// 随机沉睡 50-200ms，减少竞态条件概率
+			randomDelay := time.Duration(50+rand.Intn(150)) * time.Millisecond
+			time.Sleep(randomDelay)
+
+			task := &entity.QualityAssessmentTask{
+				MessageID:      userMessage.ID,
+				MessageContent: userMessage.Content,
+				ConversationID: req.ConversationID,
+				MapData:        req.MapData,
+			}
+
+			qualityQueue := queue.GetQualityQueue()
+			if qualityQueue != nil {
+				if err := qualityQueue.EnqueueTask(task); err != nil {
+					zlog.Warnf("将用户消息加入质量评估队列失败: %v, 会话ID: %s, 消息ID: %s",
+						err, req.ConversationID, userMessage.ID)
+				} else {
+					zlog.Infof("用户消息已加入质量评估队列: 会话ID=%s, 消息ID=%s",
+						req.ConversationID, userMessage.ID)
+				}
+			}
+		}()
 	}
 
 	return aiMsg, nil
@@ -189,6 +238,235 @@ func (a *AiChatService) GenerateMindMap(ctx context.Context, req *types.Generate
 		}
 		return resp, nil
 	}
+}
+
+// ProcessTabCompletion 处理Tab补全请求
+func (a *AiChatService) ProcessTabCompletion(ctx context.Context, req *types.TabCompletionParams) (string, error) {
+	user, ok := entity.GetUser(ctx)
+	if !ok {
+		zlog.CtxErrorf(ctx, "未能从上下文中获取用户信息")
+		return "", AI_CHAT_PERMISSION_DENIED
+	}
+
+	// 获取对话信息以获取最近的消息历史
+	conversation, err := a.aiChatRepo.GetConversation(ctx, req.ConversationID, user.UserID)
+	if err != nil {
+		return "", err
+	}
+
+	// 只提取最近的一条用户消息作为历史上下文
+	var recentMessages []*entity.Message
+	for i := len(conversation.Messages) - 1; i >= 0; i-- {
+		if conversation.Messages[i].Role == entity.USER {
+			recentMessages = []*entity.Message{conversation.Messages[i]}
+			break
+		}
+	}
+
+	// 调用Tab补全客户端
+	completedText, err := a.tabCompletionClient.TabComplete(ctx, req.UserInput, req.MapData, recentMessages)
+	if err != nil {
+		zlog.CtxErrorf(ctx, "Tab补全失败: %v", err)
+		return "", err
+	}
+
+	return completedText, nil
+}
+
+// ExportQualityConversations 导出高质量对话数据为JSONL格式
+// 复用现有SFT导出的架构模式
+// 注意：只导出真实用户的高质量对话，不包含SFT训练数据
+func (a *AiChatService) ExportQualityConversations(ctx context.Context, req *types.ExportQualityDataParams) (string, int, error) {
+	// 获取高质量对话数据（已在存储层过滤SFT数据，只获取真实用户对话）
+	conversations, err := a.aiChatRepo.GetQualityConversations(ctx, req.StartDate, req.EndDate, req.Limit)
+	if err != nil {
+		return "", 0, fmt.Errorf("获取质量对话数据失败: %w", err)
+	}
+
+	zlog.CtxInfof(ctx, "准备导出Tab补全训练数据，共 %d 个真实用户对话", len(conversations))
+
+	// 导出为JSONL格式
+	return a.buildTabCompletionJSONL(conversations)
+}
+
+// buildTabCompletionJSONL 构建Tab补全训练的JSONL数据
+// 遵循现有SFT导出的架构模式
+func (a *AiChatService) buildTabCompletionJSONL(conversations []*entity.Conversation) (string, int, error) {
+	var jsonlLines []string
+	totalRecords := 0
+
+	for _, conversation := range conversations {
+		// 双重安全检查：确保不是SFT训练数据
+		if !conversation.IsRealUserConversation() {
+			zlog.Warnf("跳过SFT训练数据，会话ID: %s, MapID: %s", conversation.ConversationID, conversation.MapID)
+			continue
+		}
+
+		// 提取导图数据
+		mapData := conversation.MapData
+		if mapData == "" {
+			mapData = "{}" // 默认空导图
+		}
+
+		// 处理每条高质量的用户消息
+		for _, message := range conversation.Messages {
+			// 只处理高质量的用户消息
+			if message.Role != entity.USER || message.QualityScore != 1 {
+				continue
+			}
+
+			// 生成多个截断变体
+			variants := a.generateTruncationVariants(message.Content)
+
+			for _, truncatedContent := range variants {
+				// 构建JSONL记录
+				record := a.buildTabCompletionRecord(truncatedContent, message.Content, mapData)
+
+				// 序列化为JSON
+				jsonBytes, err := json.Marshal(record)
+				if err != nil {
+					zlog.Warnf("序列化JSONL记录失败，跳过该记录: %v, 会话ID: %s, 消息ID: %s",
+						err, conversation.ConversationID, message.ID)
+					continue // 跳过序列化失败的记录
+				}
+
+				jsonlLines = append(jsonlLines, string(jsonBytes))
+				totalRecords++
+			}
+		}
+	}
+
+	// 合并所有JSONL行
+	result := strings.Join(jsonlLines, "\n")
+	return result, totalRecords, nil
+}
+
+// generateTruncationVariants 生成截断变体
+func (a *AiChatService) generateTruncationVariants(content string) []string {
+	// 如果内容太短，不进行截断
+	if utf8.RuneCountInString(content) < 6 {
+		return []string{content}
+	}
+
+	var variants []string
+	runes := []rune(content)
+	totalLength := len(runes)
+
+	// 生成3个不同的截断变体
+	truncationRatios := []float64{0.33, 0.5, 0.67} // 1/3, 1/2, 2/3
+
+	for _, ratio := range truncationRatios {
+		truncateLength := int(float64(totalLength) * ratio)
+
+		// 确保截断长度合理
+		if truncateLength < 2 {
+			truncateLength = 2
+		}
+		if truncateLength >= totalLength-1 {
+			truncateLength = totalLength - 1
+		}
+
+		// 进行智能截断（避免在词语中间截断）
+		truncated := a.smartTruncate(runes, truncateLength)
+		if truncated != "" && truncated != content {
+			variants = append(variants, truncated)
+		}
+	}
+
+	// 如果没有生成任何变体，返回原内容
+	if len(variants) == 0 {
+		variants = append(variants, content)
+	}
+
+	return variants
+}
+
+// smartTruncate 智能截断，避免在词语中间截断
+func (a *AiChatService) smartTruncate(runes []rune, targetLength int) string {
+	if targetLength >= len(runes) {
+		return string(runes)
+	}
+
+	// 从目标位置向前查找合适的截断点
+	for i := targetLength; i >= targetLength-5 && i > 0; i-- {
+		char := runes[i-1]
+
+		// 在标点符号、空格或中文字符后截断
+		if a.isGoodTruncationPoint(char) {
+			return strings.TrimSpace(string(runes[:i]))
+		}
+	}
+
+	// 如果找不到好的截断点，直接截断
+	return strings.TrimSpace(string(runes[:targetLength]))
+}
+
+// isGoodTruncationPoint 判断是否是好的截断点
+func (a *AiChatService) isGoodTruncationPoint(r rune) bool {
+	// 标点符号
+	if r == '，' || r == '。' || r == '？' || r == '！' || r == '；' || r == '：' {
+		return true
+	}
+	if r == ',' || r == '.' || r == '?' || r == '!' || r == ';' || r == ':' {
+		return true
+	}
+
+	// 空格
+	if r == ' ' || r == '\t' || r == '\n' {
+		return true
+	}
+
+	// 中文字符（大部分中文字符都可以作为截断点）
+	if r >= 0x4e00 && r <= 0x9fff {
+		return true
+	}
+
+	return false
+}
+
+// buildTabCompletionRecord 构建Tab补全JSONL记录
+func (a *AiChatService) buildTabCompletionRecord(userInput, fullContent, mapData string) entity.JSONLRecord {
+	// 构建系统提示词
+	systemPrompt := a.buildTabCompletionSystemPrompt(mapData)
+
+	return entity.JSONLRecord{
+		Messages: []entity.JSONLMessage{
+			{
+				Role:    "system",
+				Content: systemPrompt,
+			},
+			{
+				Role:    "user",
+				Content: userInput,
+			},
+			{
+				Role:    "assistant",
+				Content: fullContent,
+			},
+		},
+	}
+}
+
+// buildTabCompletionSystemPrompt 构建Tab补全系统提示词
+func (a *AiChatService) buildTabCompletionSystemPrompt(mapData string) string {
+	basePrompt := `你是一个专门服务于一款思维导图树产品中的提问补全助手，猜测用户下一步输入，帮助用户继续思考和完善导图，而不是直接给出知识答案。
+
+请根据以下信息，补全用户当前输入，帮助用户继续思考。提示问题必须完整保留用户已输入的内容，并且以口语化的方式提出，具体且可执行。`
+
+	if mapData != "" && mapData != "{}" {
+		return fmt.Sprintf("%s\n\n【导图上下文】\n%s", basePrompt, mapData)
+	}
+
+	return basePrompt
+}
+
+// TODO: updateConversationWithOutbox - 事务发件箱模式（未来高并发时启用）
+// 当前使用简化的随机沉睡+重试方案，如需更强一致性保证可启用事务发件箱
+
+// TriggerQualityAssessment 手动触发质量评估（暂时移除，使用实时队列）
+func (a *AiChatService) TriggerQualityAssessment(ctx context.Context, date string) (int, int, int, error) {
+	// TODO: 如果需要批量处理历史数据，可以在这里实现
+	return 0, 0, 0, fmt.Errorf("手动触发功能暂时不可用，系统使用实时队列处理")
 }
 
 // GenerateMindMapPro 批量生成思维导图（Pro版本，用于数据收集）

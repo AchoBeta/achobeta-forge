@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"fmt"
 	"forge/interface/caster"
 	"forge/interface/def"
 )
@@ -116,5 +117,63 @@ func (h *Handler) GenerateMindMap(ctx context.Context, req *def.GenerateMindMapR
 		Success: true,
 		MapJson: res,
 	}
+	return resp, nil
+}
+
+// TabComplete 处理Tab补全请求
+func (h *Handler) TabComplete(ctx context.Context, req *def.TabCompletionRequest) (*def.TabCompletionResponse, error) {
+	// 转换参数
+	params := caster.CastTabCompletionReq2Params(req)
+
+	// 调用服务层
+	completedText, err := h.AiChatService.ProcessTabCompletion(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+
+	resp := &def.TabCompletionResponse{
+		CompletedText: completedText,
+		Success:       true,
+	}
+
+	return resp, nil
+}
+
+// ExportQualityData 导出质量数据
+func (h *Handler) ExportQualityData(ctx context.Context, req *def.ExportQualityDataRequest) (*def.ExportQualityDataResponse, error) {
+	// 转换参数
+	params := caster.CastExportQualityDataReq2Params(req)
+
+	// 调用服务层
+	jsonlData, count, err := h.AiChatService.ExportQualityConversations(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+
+	resp := &def.ExportQualityDataResponse{
+		Success: true,
+		Count:   count,
+		Data:    jsonlData,
+	}
+
+	return resp, nil
+}
+
+// TriggerQualityAssessment 手动触发质量评估
+func (h *Handler) TriggerQualityAssessment(ctx context.Context, req *def.TriggerQualityAssessmentRequest) (*def.TriggerQualityAssessmentResponse, error) {
+	// 调用服务层
+	totalCount, processedCount, errorCount, err := h.AiChatService.TriggerQualityAssessment(ctx, req.Date)
+	if err != nil {
+		return nil, err
+	}
+
+	resp := &def.TriggerQualityAssessmentResponse{
+		Success:        true,
+		TotalCount:     totalCount,
+		ProcessedCount: processedCount,
+		ErrorCount:     errorCount,
+		Message:        fmt.Sprintf("质量评估完成，处理了 %d/%d 条消息", processedCount, totalCount),
+	}
+
 	return resp, nil
 }
