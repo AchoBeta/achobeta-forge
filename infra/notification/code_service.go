@@ -26,6 +26,13 @@ type codeServiceImpl struct {
 	httpClient               *http.Client
 }
 
+// smsResponseBody 短信服务响应体
+type smsResponseBody struct {
+	Code      int    `json:"code"`
+	Msg       string `json:"msg"`
+	RequestID string `json:"request_id"`
+}
+
 var cs *codeServiceImpl
 
 // InitCodeService 初始化验证码服务，需在程序启动时调用
@@ -56,7 +63,7 @@ func GetCodeService() adapter.CodeService {
 // SendEmailCode 发送邮件验证码
 func (c *codeServiceImpl) SendEmailCode(ctx context.Context, email, code string) error {
 	if c == nil {
-		return fmt.Errorf("code service not initialized")
+		return fmt.Errorf("验证码服务未初始化")
 	}
 
 	m := gomail.NewMessage()
@@ -89,19 +96,19 @@ func (c *codeServiceImpl) SendEmailCode(ctx context.Context, email, code string)
 // SendSMSCode 发送短信验证码
 func (c *codeServiceImpl) SendSMSCode(ctx context.Context, phone, code string) error {
 	if c == nil {
-		return fmt.Errorf("code service not initialized")
+		return fmt.Errorf("验证码服务未初始化")
 	}
 
 	if c.smsConfig.Key == "" {
-		return fmt.Errorf("sms key not configured")
+		return fmt.Errorf("短信服务密钥未配置")
 	}
 
 	endpoint := c.smsConfig.Endpoint
 	if endpoint == "" {
-		return fmt.Errorf("sms endpoint not configured")
+		return fmt.Errorf("短信服务端点未配置")
 	}
 
-	// 构建 URL: https://push.spug.cc/sms/{key}
+	// 构建 URL: https://push.spug.cc/send/{key}
 	smsURL := fmt.Sprintf(endpoint, c.smsConfig.Key)
 
 	// 构建 JSON 请求体
@@ -112,14 +119,14 @@ func (c *codeServiceImpl) SendSMSCode(ctx context.Context, phone, code string) e
 	jsonData, err := json.Marshal(requestBody)
 	if err != nil {
 		zlog.CtxErrorf(ctx, "序列化请求体失败: %v", err)
-		return fmt.Errorf("failed to marshal request body: %w", err)
+		return fmt.Errorf("序列化请求体失败: %w", err)
 	}
 
 	// 创建 POST 请求
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, smsURL, bytes.NewBuffer(jsonData))
 	if err != nil {
 		zlog.CtxErrorf(ctx, "创建短信服务请求失败: %v", err)
-		return fmt.Errorf("failed to create sms service request: %w", err)
+		return fmt.Errorf("创建短信服务请求失败: %w", err)
 	}
 
 	// 设置 Content-Type
@@ -128,17 +135,39 @@ func (c *codeServiceImpl) SendSMSCode(ctx context.Context, phone, code string) e
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		zlog.CtxErrorf(ctx, "请求短信服务失败: %v", err)
-		return fmt.Errorf("request sms service failed: %w", err)
+		return fmt.Errorf("请求短信服务失败: %w", err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		zlog.CtxErrorf(ctx, "短信服务返回状态码 %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
-		return fmt.Errorf("sms service returned status %d", resp.StatusCode)
+	// 读取响应体
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		zlog.CtxErrorf(ctx, "读取短信服务响应失败: %v", err)
+		return fmt.Errorf("读取短信服务响应失败: %w", err)
 	}
 
-	_, _ = io.Copy(io.Discard, resp.Body)
-	zlog.CtxInfof(ctx, "短信验证码发送成功，手机号: %s", phone)
+	// 检查 HTTP 状态码
+	if resp.StatusCode != http.StatusOK {
+		zlog.CtxErrorf(ctx, "短信服务返回HTTP状态码 %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return fmt.Errorf("短信服务返回HTTP状态码 %d", resp.StatusCode)
+	}
+
+	// 解析响应体，检查业务状态码
+	var smsResp smsResponseBody
+	if err := json.Unmarshal(body, &smsResp); err != nil {
+		zlog.CtxErrorf(ctx, "解析短信服务响应失败: %v, 响应体: %s", err, string(body))
+		return fmt.Errorf("解析短信服务响应失败: %w", err)
+	}
+
+	// 检查业务状态码
+	// code=200: 请求成功
+	// code=204: 请求成功，但未匹配到推送对象
+	if smsResp.Code != 200 {
+		zlog.CtxErrorf(ctx, "短信服务返回业务错误: code=%d, msg=%s, request_id=%s",
+			smsResp.Code, smsResp.Msg, smsResp.RequestID)
+		return fmt.Errorf("短信服务返回业务错误: code=%d, msg=%s", smsResp.Code, smsResp.Msg)
+	}
+
+	zlog.CtxInfof(ctx, "短信验证码发送成功，手机号: %s, request_id: %s", phone, smsResp.RequestID)
 	return nil
 }
