@@ -95,3 +95,27 @@ func CastGenerateMindMapReq2Params(req *def.GenerateMindMapRequest) *types.Gener
 		File: req.File,
 	}
 }
+
+// CastTabCompletionReq2Params 转换Tab补全请求参数
+func CastTabCompletionReq2Params(req *def.TabCompletionRequest) *types.TabCompletionParams {
+	if req == nil {
+		return nil
+	}
+	return &types.TabCompletionParams{
+		ConversationID: req.ConversationID,
+		UserInput:      req.UserInput,
+		MapData:        req.MapData,
+	}
+}
+
+// CastExportQualityDataReq2Params 转换质量数据导出请求参数
+func CastExportQualityDataReq2Params(req *def.ExportQualityDataRequest) *types.ExportQualityDataParams {
+	if req == nil {
+		return nil
+	}
+	return &types.ExportQualityDataParams{
+		StartDate: req.StartDate,
+		EndDate:   req.EndDate,
+		Limit:     req.Limit,
+	}
+}

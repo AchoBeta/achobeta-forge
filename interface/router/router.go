@@ -185,4 +185,16 @@ func loadAiChat(r *gin.RouterGroup) {
 	// [POST] /api/biz/v1/aichat/generate_mind_map
 	// 表单名称 file
 	r.Handle(POST, "generate_mind_map", GenerateMindMap())
+
+	// Tab补全
+	// [POST] /api/biz/v1/aichat/tab_complete
+	r.Handle(POST, "tab_complete", TabComplete())
+
+	// 导出质量数据
+	// [GET] /api/biz/v1/aichat/export_quality_data
+	r.Handle(GET, "export_quality_data", ExportQualityData())
+
+	// 手动触发质量评估
+	// [POST] /api/biz/v1/aichat/trigger_quality_assessment
+	r.Handle(POST, "trigger_quality_assessment", TriggerQualityAssessment())
 }

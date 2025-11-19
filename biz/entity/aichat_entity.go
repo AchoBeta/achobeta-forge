@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"forge/infra/configs"
 	"forge/util"
-	"github.com/cloudwego/eino/schema"
 	"time"
+
+	"github.com/cloudwego/eino/schema"
 )
 
 var (
@@ -16,14 +17,22 @@ var (
 	TOOL      = "tool"
 )
 
+// SFT训练数据的MapID标识符
+const (
+	SFT_BATCH_GENERATION   = "BATCH_GENERATION"
+	SFT_FEWSHOT_GENERATION = "FEWSHOT_GENERATION"
+)
+
 type aiChatCtxKey struct{}
 
 type Message struct {
-	Content    string            `json:"content"`
-	Role       string            `json:"role"`
-	ToolCallID string            `json:"tool_call_id"`
-	ToolCalls  []schema.ToolCall `json:"tool_calls"`
-	Timestamp  time.Time         `json:"timestamp"`
+	ID           string // 消息唯一ID
+	Content      string
+	Role         string
+	ToolCallID   string
+	ToolCalls    []schema.ToolCall
+	Timestamp    time.Time
+	QualityScore int // 0=未评估，1=高质量，-1=低质量
 }
 
 type Conversation struct {
@@ -62,7 +71,15 @@ func NewConversation(userID, mapID, title, mapData string) (*Conversation, error
 func (c *Conversation) AddMessage(content, role, ToolCallID string, ToolCalls []schema.ToolCall) *Message {
 	now := time.Now()
 
+	// 生成消息唯一ID
+	messageID, err := util.GenerateStringID()
+	if err != nil {
+		// 如果ID生成失败，使用时间戳作为备选方案
+		messageID = fmt.Sprintf("%s_%d", c.ConversationID, now.UnixNano())
+	}
+
 	message := &Message{
+		ID:         messageID,
 		Content:    content,
 		Role:       role,
 		ToolCallID: ToolCallID,
@@ -107,4 +124,58 @@ func WithConversation(ctx context.Context, conversation *Conversation) context.C
 func GetConversation(ctx context.Context) (*Conversation, bool) {
 	v, ok := ctx.Value(aiChatCtxKey{}).(*Conversation)
 	return v, ok
+}
+
+// IsRealUserConversation 判断是否为真实用户对话（非SFT训练数据）
+func (c *Conversation) IsRealUserConversation() bool {
+	return c.MapID != SFT_BATCH_GENERATION && c.MapID != SFT_FEWSHOT_GENERATION
+}
+
+// IsSFTTrainingData 判断是否为SFT训练数据
+func (c *Conversation) IsSFTTrainingData() bool {
+	return c.MapID == SFT_BATCH_GENERATION || c.MapID == SFT_FEWSHOT_GENERATION
+}
+
+// Tab补全相关实体
+type TabCompletionRequest struct {
+	ConversationID string
+	UserInput      string
+	MapData        string
+}
+
+type TabCompletionResponse struct {
+	CompletedText string
+	Success       bool
+}
+
+// 质量评估队列任务
+type QualityAssessmentTask struct {
+	MessageID      string
+	MessageContent string
+	ConversationID string
+	MapData        string
+}
+
+// JSONL导出相关实体
+type JSONLMessage struct {
+	Role    string
+	Content string
+}
+
+type JSONLRecord struct {
+	Messages []JSONLMessage
+}
+
+// 质量数据导出请求
+type ExportQualityDataRequest struct {
+	StartDate *time.Time
+	EndDate   *time.Time
+	Limit     int
+}
+
+type ExportQualityDataResponse struct {
+	Success bool
+	Count   int
+	Data    string // JSONL格式的数据
+	Message string
 }

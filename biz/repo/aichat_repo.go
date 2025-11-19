@@ -24,6 +24,12 @@ type AiChatRepo interface {
 
 	//删除某个会话
 	DeleteConversation(ctx context.Context, conversationID, userID string) error
+
+	//获取高质量的对话数据用于导出
+	GetQualityConversations(ctx context.Context, startDate, endDate *string, limit int) ([]*entity.Conversation, error)
+
+	//更新特定消息的质量评分
+	UpdateMessageQuality(ctx context.Context, conversationID string, messageID string, qualityScore int) error
 }
 
 type EinoServer interface {
@@ -32,7 +38,7 @@ type EinoServer interface {
 
 	//生成导图
 	GenerateMindMap(ctx context.Context, text, userID string) (string, error)
-	
+
 	//批量生成导图
 	GenerateMindMapBatch(ctx context.Context, text, userID string, strategy int, count int) ([]string, []*entity.Conversation, error)
 }

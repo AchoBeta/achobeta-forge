@@ -45,6 +45,11 @@ type IHandler interface {
 	UpdateConversationTitle(ctx context.Context, req *def.UpdateConversationTitleRequest) (*def.UpdateConversationTitleResponse, error)
 	GenerateMindMap(ctx context.Context, req *def.GenerateMindMapRequest) (*def.GenerateMindMapResponse, error)
 
+	// Tab补全和质量数据导出
+	TabComplete(ctx context.Context, req *def.TabCompletionRequest) (*def.TabCompletionResponse, error)
+	ExportQualityData(ctx context.Context, req *def.ExportQualityDataRequest) (*def.ExportQualityDataResponse, error)
+	TriggerQualityAssessment(ctx context.Context, req *def.TriggerQualityAssessmentRequest) (*def.TriggerQualityAssessmentResponse, error)
+
 	// Generation: 批量生成相关接口
 	GenerateMindMapPro(ctx context.Context, req *def.GenerateMindMapProReq) (rsp *def.GenerateMindMapProResp, err error)
 	GetGenerationBatch(ctx context.Context, batchID string) (rsp *def.GetGenerationBatchResp, err error)
