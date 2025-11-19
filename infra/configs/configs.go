@@ -213,6 +213,7 @@ type SMSConfig struct {
 type UniOfficeConfig struct {
 	MeteredKey string `mapstructure:"metered_key"`
 }
+
 // OAuthConfig OAuth 第三方登录配置
 type OAuthConfig struct {
 	GitHubClientID     string `mapstructure:"github_client_id"`

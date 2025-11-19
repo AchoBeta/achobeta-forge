@@ -47,7 +47,7 @@ unioffice:    #文件解析apikey
 
 sms:         # 短信验证码配置
   key:                         # 短信服务API Key/推送密钥   第三方:https://push.spug.cc/
-  endpoint: "https://push.spug.cc/send/%s?code=%s&targets=%s"  # 短信接口URL模板
+  endpoint: "https://push.spug.cc/send/%s"  # 短信接口URL模板 (POST请求，参数在JSON body中)
 
 ai_client:
   api_key: key
