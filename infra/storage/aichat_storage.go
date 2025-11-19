@@ -245,28 +245,40 @@ func (a *aiChatPersistence) GetQualityConversations(ctx context.Context, startDa
 	return CastConversationPOs2DOs(conversationPOs)
 }
 
-// UpdateMessageQuality 更新特定消息的质量评分
+// UpdateMessageQuality 更新特定消息的质量评分 - 使用原子操作
 func (a *aiChatPersistence) UpdateMessageQuality(ctx context.Context, conversationID string, messageID string, qualityScore int) error {
-	// 由于消息存储在JSON字段中，我们需要先获取对话，更新消息，然后保存回去
+	// 1. 先获取对话以找到消息在JSON数组中的索引
 	conversation, err := a.GetConversation(ctx, conversationID, "")
 	if err != nil {
-		return err
+		return fmt.Errorf("获取对话失败: %w", err)
 	}
 
-	// 查找并更新对应ID的消息
-	updated := false
-	for _, message := range conversation.Messages {
+	// 2. 查找消息在JSON数组中的索引
+	messageIndex := -1
+	for i, message := range conversation.Messages {
 		if message.ID == messageID {
-			message.QualityScore = qualityScore
-			updated = true
+			messageIndex = i
 			break
 		}
 	}
 
-	if !updated {
-		return fmt.Errorf("未找到ID为 %s 的消息", messageID)
+	if messageIndex == -1 {
+		return fmt.Errorf("在会话 %s 中未找到ID为 %s 的消息", conversationID, messageID)
 	}
 
-	// 更新对话
-	return a.UpdateConversationMessage(ctx, conversation)
+	// 3. 使用数据库原子的JSON_SET函数更新，避免竞态条件
+	jsonPath := fmt.Sprintf("$[%d].QualityScore", messageIndex)
+	result := a.db.WithContext(ctx).Model(&po.ConversationPO{}).
+		Where("conversation_id = ?", conversationID).
+		Update("messages", gorm.Expr("JSON_SET(messages, ?, ?)", jsonPath, qualityScore))
+
+	if result.Error != nil {
+		return fmt.Errorf("原子更新消息质量评分失败: %w", result.Error)
+	}
+
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("更新消息质量评分时没有行受到影响，会话ID: %s", conversationID)
+	}
+
+	return nil
 }

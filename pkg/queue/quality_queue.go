@@ -8,6 +8,7 @@ import (
 	"forge/biz/repo"
 	"forge/infra/eino"
 	"forge/pkg/log/zlog"
+	"math/rand"
 	"time"
 
 	"github.com/panjf2000/ants/v2"
@@ -97,7 +98,7 @@ func (q *QualityQueue) processTask(task *QualityAssessmentTask) {
 		finalScore = -1 // 低质量用-1表示
 	}
 
-	// 带重试的更新数据库中的质量评分
+	// 带重试的更新数据库中的质量评分 - 使用指数退避+抖动
 	maxRetries := 3
 	for i := 0; i < maxRetries; i++ {
 		err = q.aiChatRepo.UpdateMessageQuality(ctx, task.ConversationID, task.MessageID, finalScore)
@@ -106,8 +107,8 @@ func (q *QualityQueue) processTask(task *QualityAssessmentTask) {
 		}
 
 		if i < maxRetries-1 {
-			// 如果不是最后一次重试，等待一段时间后重试
-			waitTime := time.Duration(i+1) * 500 * time.Millisecond
+			// 指数退避 + 随机抖动，避免惊群效应
+			waitTime := q.calculateBackoffWithJitter(i)
 			zlog.CtxWarnf(ctx, "更新消息质量评分失败，%v后重试 (第%d次): %v", waitTime, i+1, err)
 			time.Sleep(waitTime)
 		}
@@ -149,4 +150,35 @@ func (q *QualityQueue) Stop() {
 	close(q.stopChan)
 	q.workerPool.Release()
 	zlog.Infof("质量评估队列和协程池已关闭")
+}
+
+// calculateBackoffWithJitter 计算带抖动的指数退避延迟
+func (q *QualityQueue) calculateBackoffWithJitter(attempt int) time.Duration {
+	// 基础延迟: 500ms
+	baseDelay := 500 * time.Millisecond
+
+	// 指数退避: 500ms, 1s, 2s
+	exponentialDelay := baseDelay * time.Duration(1<<uint(attempt))
+
+	// 添加抖动 (±25%)
+	jitter := time.Duration(rand.Float64() * 0.5 * float64(exponentialDelay))
+	if rand.Float64() < 0.5 {
+		jitter = -jitter
+	}
+
+	finalDelay := exponentialDelay + jitter
+
+	// 最大延迟限制
+	maxDelay := 10 * time.Second
+	if finalDelay > maxDelay {
+		finalDelay = maxDelay
+	}
+
+	// 最小延迟限制
+	minDelay := 100 * time.Millisecond
+	if finalDelay < minDelay {
+		finalDelay = minDelay
+	}
+
+	return finalDelay
 }

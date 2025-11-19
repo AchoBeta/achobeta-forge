@@ -68,14 +68,16 @@ func NewConversation(userID, mapID, title, mapData string) (*Conversation, error
 	}, nil
 }
 
-func (c *Conversation) AddMessage(content, role, ToolCallID string, ToolCalls []schema.ToolCall) *Message {
+func (c *Conversation) AddMessage(content, role, ToolCallID string, ToolCalls []schema.ToolCall) (*Message, error) {
 	now := time.Now()
 
 	// 生成消息唯一ID
 	messageID, err := util.GenerateStringID()
 	if err != nil {
-		// 如果ID生成失败，使用时间戳作为备选方案
+		// 记录错误但继续执行，使用时间戳作为备选方案
 		messageID = fmt.Sprintf("%s_%d", c.ConversationID, now.UnixNano())
+		// 返回警告，但不阻断流程
+		err = fmt.Errorf("ID生成失败，使用备选方案: %w", err)
 	}
 
 	message := &Message{
@@ -89,7 +91,7 @@ func (c *Conversation) AddMessage(content, role, ToolCallID string, ToolCalls []
 
 	c.Messages = append(c.Messages, message)
 	c.UpdatedAt = now
-	return message
+	return message, err // 返回消息和可能的警告错误
 }
 
 func (c *Conversation) UpdateTitle(title string) {
@@ -155,6 +157,33 @@ type QualityAssessmentTask struct {
 	ConversationID string
 	MapData        string
 }
+
+// 发件箱事件
+type OutboxEvent struct {
+	EventID     string
+	EventType   string
+	AggregateID string // 业务聚合ID
+	Payload     interface{}
+	Status      string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	ProcessedAt *time.Time
+	RetryCount  int
+	LastError   string
+}
+
+// 发件箱事件状态
+const (
+	OUTBOX_STATUS_PENDING    = "pending"
+	OUTBOX_STATUS_PROCESSING = "processing"
+	OUTBOX_STATUS_COMPLETED  = "completed"
+	OUTBOX_STATUS_FAILED     = "failed"
+)
+
+// 发件箱事件类型
+const (
+	OUTBOX_EVENT_QUALITY_ASSESSMENT = "quality_assessment"
+)
 
 // JSONL导出相关实体
 type JSONLMessage struct {

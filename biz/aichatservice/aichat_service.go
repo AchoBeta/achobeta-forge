@@ -12,6 +12,7 @@ import (
 	"forge/pkg/log/zlog"
 	"forge/pkg/queue"
 	"forge/util"
+	"math/rand"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -63,7 +64,10 @@ func (a *AiChatService) ProcessUserMessage(ctx context.Context, req *types.Proce
 	conversation.ProcessSystemPrompt()
 
 	//添加用户聊天记录
-	userMessage := conversation.AddMessage(req.Message, entity.USER, "", nil)
+	userMessage, addMsgErr := conversation.AddMessage(req.Message, entity.USER, "", nil)
+	if addMsgErr != nil {
+		zlog.CtxWarnf(ctx, "添加用户消息时出现警告: %v", addMsgErr)
+	}
 
 	//调用ai 返回ai消息
 	aiMsg, err := a.einoServer.SendMessage(ctx, conversation.Messages)
@@ -72,9 +76,15 @@ func (a *AiChatService) ProcessUserMessage(ctx context.Context, req *types.Proce
 	}
 
 	//添加ai消息
-	conversation.AddMessage(aiMsg.Content, entity.ASSISTANT, "", aiMsg.ToolCalls)
+	_, addAiMsgErr := conversation.AddMessage(aiMsg.Content, entity.ASSISTANT, "", aiMsg.ToolCalls)
+	if addAiMsgErr != nil {
+		zlog.CtxWarnf(ctx, "添加AI消息时出现警告: %v", addAiMsgErr)
+	}
 	if aiMsg.NewMapJson != "" {
-		conversation.AddMessage(aiMsg.NewMapJson, entity.TOOL, aiMsg.ToolCallID, nil)
+		_, addToolMsgErr := conversation.AddMessage(aiMsg.NewMapJson, entity.TOOL, aiMsg.ToolCallID, nil)
+		if addToolMsgErr != nil {
+			zlog.CtxWarnf(ctx, "添加工具消息时出现警告: %v", addToolMsgErr)
+		}
 	}
 
 	//更新会话聊天记录
@@ -84,12 +94,13 @@ func (a *AiChatService) ProcessUserMessage(ctx context.Context, req *types.Proce
 	}
 
 	// 只对真实用户对话进行质量评估，排除SFT训练数据
-	// 重要：在保存对话后再入队，确保消息已存在于数据库中
+	// 使用随机沉睡+重试的简化方案
 	if conversation.IsRealUserConversation() {
 		// 将用户消息加入质量评估队列（异步处理，不影响聊天响应）
 		go func() {
-			// 稍微延迟确保数据库事务完全提交
-			time.Sleep(100 * time.Millisecond)
+			// 随机沉睡 50-200ms，减少竞态条件概率
+			randomDelay := time.Duration(50+rand.Intn(150)) * time.Millisecond
+			time.Sleep(randomDelay)
 
 			task := &entity.QualityAssessmentTask{
 				MessageID:      userMessage.ID,
@@ -101,7 +112,11 @@ func (a *AiChatService) ProcessUserMessage(ctx context.Context, req *types.Proce
 			qualityQueue := queue.GetQualityQueue()
 			if qualityQueue != nil {
 				if err := qualityQueue.EnqueueTask(task); err != nil {
-					zlog.Warnf("将用户消息加入质量评估队列失败: %v", err)
+					zlog.Warnf("将用户消息加入质量评估队列失败: %v, 会话ID: %s, 消息ID: %s",
+						err, req.ConversationID, userMessage.ID)
+				} else {
+					zlog.Infof("用户消息已加入质量评估队列: 会话ID=%s, 消息ID=%s",
+						req.ConversationID, userMessage.ID)
 				}
 			}
 		}()
@@ -310,6 +325,8 @@ func (a *AiChatService) buildTabCompletionJSONL(conversations []*entity.Conversa
 				// 序列化为JSON
 				jsonBytes, err := json.Marshal(record)
 				if err != nil {
+					zlog.Warnf("序列化JSONL记录失败，跳过该记录: %v, 会话ID: %s, 消息ID: %s",
+						err, conversation.ConversationID, message.ID)
 					continue // 跳过序列化失败的记录
 				}
 
@@ -442,6 +459,9 @@ func (a *AiChatService) buildTabCompletionSystemPrompt(mapData string) string {
 
 	return basePrompt
 }
+
+// TODO: updateConversationWithOutbox - 事务发件箱模式（未来高并发时启用）
+// 当前使用简化的随机沉睡+重试方案，如需更强一致性保证可启用事务发件箱
 
 // TriggerQualityAssessment 手动触发质量评估（暂时移除，使用实时队列）
 func (a *AiChatService) TriggerQualityAssessment(ctx context.Context, date string) (int, int, int, error) {
