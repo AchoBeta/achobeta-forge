@@ -27,8 +27,7 @@ var logger *zap.Logger
 //	@param fields
 //	@return context.Context
 func WithLogKey(ctx context.Context, fields ...zapcore.Field) context.Context {
-	ctx = context.WithValue(ctx, loggerKey, withContext(ctx).With(fields...))
-	// 获取之前的logdetail
+	// 先获取之前的logdetail（从原始ctx获取）
 	detail := make([]zapcore.Field, 0)
 	_detail := ctx.Value(logDetail)
 	if _detail != nil {
@@ -37,7 +36,11 @@ func WithLogKey(ctx context.Context, fields ...zapcore.Field) context.Context {
 	// 深拷贝防止污染
 	detail = gslice.Clone(detail)
 	detail = append(detail, fields...)
-	return context.WithValue(ctx, loggerKey, detail)
+	
+	// 设置logger和logDetail
+	ctx = context.WithValue(ctx, loggerKey, withContext(ctx).With(fields...))
+	ctx = context.WithValue(ctx, logDetail, detail)
+	return ctx
 }
 
 // 通过ctx获得logid

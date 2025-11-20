@@ -75,15 +75,23 @@ func StartRootSpan(ctx context.Context, spanName string) (context.Context, cozel
 		if ok {
 			span.SetUserIDBaggage(ctx, user.UserID)
 		}
-		logid, ok := zlog.GetLogId(ctx)
-		if ok {
-			span.SetTags(ctx, map[string]interface{}{
-				"log_id": logid,
-			})
-		}
+		setLogIDTag(ctx, span)
 	}
 
 	return ctx, span
+}
+
+// setLogIDTag 设置 logid 到 span 标签（辅助函数）
+func setLogIDTag(ctx context.Context, span cozeloop.Span) {
+	if span == nil {
+		return
+	}
+	logid, ok := zlog.GetLogId(ctx)
+	if ok {
+		span.SetTags(ctx, map[string]interface{}{
+			"log_id": logid,
+		})
+	}
 }
 
 // StartCustomSpan 创建自定义 Span（用于业务逻辑）
@@ -101,6 +109,7 @@ func StartCustomSpan(ctx context.Context, spanName string, spanType string) (con
 		if ok {
 			span.SetUserIDBaggage(ctx, user.UserID)
 		}
+		setLogIDTag(ctx, span)
 	}
 
 	return ctx, span
@@ -125,6 +134,7 @@ func StartModelSpan(ctx context.Context, spanName string, modelProvider string, 
 		if ok {
 			span.SetUserIDBaggage(ctx, user.UserID)
 		}
+		setLogIDTag(ctx, span)
 	}
 
 	return ctx, span

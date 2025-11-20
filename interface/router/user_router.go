@@ -32,11 +32,8 @@ func handleHandlerResponse(gCtx *gin.Context, rsp interface{}, err error, emptyR
 	r := response.NewResponse(gCtx)
 	if err != nil {
 		msgCode := mapServiceErrorToMsgCode(err)
-		gCtx.JSON(http.StatusOK, response.JsonMsgResult{
-			Code:    msgCode.Code,
-			Message: msgCode.Msg,
-			Data:    emptyResp,
-		})
+		// 创建自定义错误响应并通过 AllInOne 方法注入 logid
+		r.AllInOne(emptyResp, err, msgCode.Code, msgCode.Msg)
 		return
 	}
 	r.Success(rsp)
@@ -150,11 +147,8 @@ func Login() gin.HandlerFunc {
 
 		// 绑定JSON请求体
 		if err := gCtx.ShouldBindJSON(req); err != nil {
-			gCtx.JSON(http.StatusOK, response.JsonMsgResult{
-				Code:    response.INVALID_PARAMS.Code,
-				Message: response.INVALID_PARAMS.Msg,
-				Data:    def.LoginResp{Success: false},
-			})
+			r := response.NewResponse(gCtx)
+			r.AllInOne(def.LoginResp{Success: false}, err, response.INVALID_PARAMS.Code, response.INVALID_PARAMS.Msg)
 			return
 		}
 
