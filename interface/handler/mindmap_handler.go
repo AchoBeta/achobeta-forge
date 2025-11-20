@@ -3,19 +3,19 @@ package handler
 import (
 	"context"
 
-	// "forge/constant"
+	"forge/constant"
 	"forge/interface/caster"
 	"forge/interface/def"
 	"forge/pkg/log/zlog"
-	// "forge/pkg/loop"
+	"forge/pkg/loop"
 )
 
 func (h *Handler) CreateMindMap(ctx context.Context, req *def.CreateMindMapReq) (rsp *def.CreateMindMapResp, err error) {
-	// 链路追踪 - TODO: cozeloop配置好后启用
-	// ctx, sp := loop.GetNewSpan(ctx, "handler.create_mindmap", constant.LoopSpanType_Handle)
+	// 链路追踪
+	ctx, sp := loop.GetNewSpan(ctx, "handler.create_mindmap", constant.LoopSpanType_Handle)
 	defer func() {
 		zlog.CtxAllInOne(ctx, "handler.create_mindmap", req, rsp, err)
-		// loop.SetSpanAllInOne(ctx, sp, req, rsp, err)
+		loop.SetSpanAllInOne(ctx, sp, req, rsp, err)
 	}()
 
 	// DTO -> Service 层参数转换
@@ -35,11 +35,11 @@ func (h *Handler) CreateMindMap(ctx context.Context, req *def.CreateMindMapReq) 
 }
 
 func (h *Handler) GetMindMap(ctx context.Context, mapID string) (rsp *def.GetMindMapResp, err error) {
-	// 链路追踪 - TODO: cozeloop配置好后启用
-	// ctx, sp := loop.GetNewSpan(ctx, "handler.get_mindmap", constant.LoopSpanType_Handle)
+	// 链路追踪
+	ctx, sp := loop.GetNewSpan(ctx, "handler.get_mindmap", constant.LoopSpanType_Handle)
 	defer func() {
 		zlog.CtxAllInOne(ctx, "handler.get_mindmap", mapID, rsp, err)
-		// loop.SetSpanAllInOne(ctx, sp, mapID, rsp, err)
+		loop.SetSpanAllInOne(ctx, sp, mapID, rsp, err)
 	}()
 
 	// 调用服务层获取思维导图
@@ -56,11 +56,11 @@ func (h *Handler) GetMindMap(ctx context.Context, mapID string) (rsp *def.GetMin
 }
 
 func (h *Handler) ListMindMaps(ctx context.Context, req *def.ListMindMapsReq) (rsp *def.ListMindMapsResp, err error) {
-	// 链路追踪 - TODO: cozeloop配置好后启用
-	// ctx, sp := loop.GetNewSpan(ctx, "handler.list_mindmaps", constant.LoopSpanType_Handle)
+	// 链路追踪
+	ctx, sp := loop.GetNewSpan(ctx, "handler.list_mindmaps", constant.LoopSpanType_Handle)
 	defer func() {
 		zlog.CtxAllInOne(ctx, "handler.list_mindmaps", req, rsp, err)
-		// loop.SetSpanAllInOne(ctx, sp, req, rsp, err)
+		loop.SetSpanAllInOne(ctx, sp, req, rsp, err)
 	}()
 
 	// DTO -> Service 层参数转换
@@ -83,11 +83,11 @@ func (h *Handler) ListMindMaps(ctx context.Context, req *def.ListMindMapsReq) (r
 }
 
 func (h *Handler) UpdateMindMap(ctx context.Context, mapID string, req *def.UpdateMindMapReq) (rsp *def.UpdateMindMapResp, err error) {
-	// 链路追踪 - TODO: cozeloop配置好后启用
-	// ctx, sp := loop.GetNewSpan(ctx, "handler.update_mindmap", constant.LoopSpanType_Handle)
+	// 链路追踪
+	ctx, sp := loop.GetNewSpan(ctx, "handler.update_mindmap", constant.LoopSpanType_Handle)
 	defer func() {
 		zlog.CtxAllInOne(ctx, "handler.update_mindmap", map[string]interface{}{"mapID": mapID, "req": req}, rsp, err)
-		// loop.SetSpanAllInOne(ctx, sp, map[string]interface{}{"mapID": mapID, "req": req}, rsp, err)
+		loop.SetSpanAllInOne(ctx, sp, map[string]interface{}{"mapID": mapID, "req": req}, rsp, err)
 	}()
 
 	// DTO -> Service 层参数转换
@@ -107,11 +107,11 @@ func (h *Handler) UpdateMindMap(ctx context.Context, mapID string, req *def.Upda
 }
 
 func (h *Handler) DeleteMindMap(ctx context.Context, mapID string) (rsp *def.DeleteMindMapResp, err error) {
-	// 链路追踪 - TODO: cozeloop配置好后启用
-	// ctx, sp := loop.GetNewSpan(ctx, "handler.delete_mindmap", constant.LoopSpanType_Handle)
+	// 链路追踪
+	ctx, sp := loop.GetNewSpan(ctx, "handler.delete_mindmap", constant.LoopSpanType_Handle)
 	defer func() {
 		zlog.CtxAllInOne(ctx, "handler.delete_mindmap", mapID, rsp, err)
-		// loop.SetSpanAllInOne(ctx, sp, mapID, rsp, err)
+		loop.SetSpanAllInOne(ctx, sp, mapID, rsp, err)
 	}()
 
 	// 调用服务层删除思维导图
@@ -128,11 +128,11 @@ func (h *Handler) DeleteMindMap(ctx context.Context, mapID string) (rsp *def.Del
 }
 
 func (h *Handler) BatchDeleteMindMap(ctx context.Context, req *def.BatchDeleteMindMapReq) (rsp *def.BatchDeleteMindMapResp, err error) {
-	// 链路追踪 - TODO: cozeloop配置好后启用
-	// ctx, sp := loop.GetNewSpan(ctx, "handler.batch_delete_mindmap", constant.LoopSpanType_Handle)
+	// 链路追踪
+	ctx, sp := loop.GetNewSpan(ctx, "handler.batch_delete_mindmap", constant.LoopSpanType_Handle)
 	defer func() {
 		zlog.CtxAllInOne(ctx, "handler.batch_delete_mindmap", req, rsp, err)
-		// loop.SetSpanAllInOne(ctx, sp, req, rsp, err)
+		loop.SetSpanAllInOne(ctx, sp, req, rsp, err)
 	}()
 
 	// 调用服务层批量删除思维导图

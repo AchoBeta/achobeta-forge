@@ -4,22 +4,22 @@ import (
 	"context"
 	"strings"
 
-	// "forge/constant"
+	"forge/constant"
 	"forge/biz/entity"
 	"forge/biz/userservice"
 	"forge/interface/caster"
 	"forge/interface/def"
 	"forge/pkg/log/zlog"
-	// "forge/pkg/loop"
+	"forge/pkg/loop"
 )
 
 func (h *Handler) Login(ctx context.Context, req *def.LoginReq) (rsp *def.LoginResp, err error) {
 
-	// 这里用作handler级别的链路追踪 - TODO: cozeloop配置好后启用
-	// ctx, sp := loop.GetNewSpan(ctx, "handler.login", constant.LoopSpanType_Handle)
+	// 这里用作handler级别的链路追踪
+	ctx, sp := loop.GetNewSpan(ctx, "handler.login", constant.LoopSpanType_Handle)
 	defer func() {
 		zlog.CtxAllInOne(ctx, "handler.login", req, rsp, err)
-		// loop.SetSpanAllInOne(ctx, sp, req, rsp, err)
+		loop.SetSpanAllInOne(ctx, sp, req, rsp, err)
 	}()
 
 	// 这里可能会做更复杂的service编排

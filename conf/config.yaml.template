@@ -122,3 +122,9 @@ oauth:        # OAuth 第三方登录配置
   wechat_callback_url: "http://localhost:8080/api/biz/v1/auth/wechat/callback"
   session_secret: "your_session_secret_key_min_32_chars"
 
+cozeloop:     # CozeLoop 可观测性配置
+  workspace_id: ""  # CozeLoop 工作空间 ID
+  api_token: ""  # CozeLoop API Token
+  enable: true                         # 是否启用 CozeLoop 追踪
+  prompt_trace: true                   # 是否启用 Prompt 追踪
+
