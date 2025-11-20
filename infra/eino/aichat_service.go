@@ -287,6 +287,9 @@ func (a *AiChatClient) generateWithStructuredOutput(
 	messages []*schema.Message,
 	jsonSchema map[string]interface{},
 ) (result *schema.Message, err error) {
+	// 声明响应变量，使其在defer块中可用
+	var resp arkmodel.ChatCompletionResponse
+
 	// 创建手动 Model Span 用于追踪结构化输出调用
 	ctx, modelSpan := loop.StartModelSpan(ctx, "eino.generate_structured_output", "doubao", a.ModelName)
 	defer func() {
@@ -316,7 +319,13 @@ func (a *AiChatClient) generateWithStructuredOutput(
 			if result != nil && result.Content != "" {
 				responseContent = result.Content // 记录完整的 JSON 输出
 			}
-			loop.SetModelSpanData(ctx, modelSpan, traceMessages, responseContent, 0, 0, err)
+
+			// 提取token使用量信息
+			var inputTokens, outputTokens int64
+			inputTokens = int64(resp.Usage.PromptTokens)
+			outputTokens = int64(resp.Usage.CompletionTokens)
+
+			loop.SetModelSpanData(ctx, modelSpan, traceMessages, responseContent, inputTokens, outputTokens, err)
 		}
 	}()
 
@@ -367,7 +376,7 @@ func (a *AiChatClient) generateWithStructuredOutput(
 	}
 
 	// 调用 API
-	resp, err := client.CreateChatCompletion(ctx, request)
+	resp, err = client.CreateChatCompletion(ctx, request)
 	if err != nil {
 		return nil, fmt.Errorf("结构化输出调用失败: %w", err)
 	}

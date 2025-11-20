@@ -83,12 +83,11 @@ func (s *MindMapServiceImpl) CreateMindMap(ctx context.Context, req *types.Creat
 }
 
 // GetMindMap 获取思维导图（用户只能获取自己的思维导图）
-func (s *MindMapServiceImpl) GetMindMap(ctx context.Context, mapID string) (*entity.MindMap, error) {
+func (s *MindMapServiceImpl) GetMindMap(ctx context.Context, mapID string) (mindMap *entity.MindMap, err error) {
 	// 服务层链路追踪
 	ctx, sp := loop.GetNewSpan(ctx, "service.get_mindmap", constant.LoopSpanType_Function)
 	defer func() {
-		var err error
-		loop.SetSpanAllInOne(ctx, sp, mapID, map[string]interface{}{"success": err == nil}, err)
+		loop.SetSpanAllInOne(ctx, sp, mapID, mindMap, err)
 	}()
 
 	// 从JWT token上下文中获取用户信息
@@ -108,7 +107,7 @@ func (s *MindMapServiceImpl) GetMindMap(ctx context.Context, mapID string) (*ent
 	query := repo.NewMindMapQueryByID(user.UserID, mapID)
 
 	// 查询思维导图
-	mindMap, err := s.mindMapRepo.GetMindMap(ctx, query)
+	mindMap, err = s.mindMapRepo.GetMindMap(ctx, query)
 	if err != nil {
 		zlog.CtxErrorf(ctx, "failed to get mindmap: %v", err)
 		return nil, ErrInternalError

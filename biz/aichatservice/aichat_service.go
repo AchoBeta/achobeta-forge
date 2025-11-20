@@ -8,6 +8,7 @@ import (
 	"forge/biz/entity"
 	"forge/biz/repo"
 	"forge/biz/types"
+	"forge/constant"
 	"forge/infra/eino"
 	"forge/pkg/log/zlog"
 	"forge/pkg/loop"
@@ -47,7 +48,7 @@ func NewAiChatService(aiChatRepo repo.AiChatRepo, einoServer repo.EinoServer) *A
 
 func (a *AiChatService) ProcessUserMessage(ctx context.Context, req *types.ProcessUserMessageParams) (resp types.AgentResponse, err error) {
 	// 服务层链路追踪
-	ctx, sp := loop.StartCustomSpan(ctx, "service.process_user_message", "function")
+	ctx, sp := loop.StartCustomSpan(ctx, "service.process_user_message", constant.LoopSpanType_Function.String())
 	defer func() {
 		// 记录完整的响应内容到 CozeLoop
 		loop.SetSpanAllInOne(ctx, sp, req, resp, err)
@@ -222,7 +223,7 @@ func (a *AiChatService) UpdateConversationTitle(ctx context.Context, req *types.
 
 func (a *AiChatService) GenerateMindMap(ctx context.Context, req *types.GenerateMindMapParams) (result string, err error) {
 	// 服务层链路追踪
-	ctx, sp := loop.StartCustomSpan(ctx, "service.generate_mindmap", "function")
+	ctx, sp := loop.StartCustomSpan(ctx, "service.generate_mindmap", constant.LoopSpanType_Function.String())
 	defer func() {
 		// 记录完整的响应内容到 CozeLoop
 		loop.SetSpanAllInOne(ctx, sp, req, result, err)
@@ -258,7 +259,7 @@ func (a *AiChatService) GenerateMindMap(ctx context.Context, req *types.Generate
 // ProcessTabCompletion 处理Tab补全请求
 func (a *AiChatService) ProcessTabCompletion(ctx context.Context, req *types.TabCompletionParams) (result string, err error) {
 	// 服务层链路追踪
-	ctx, sp := loop.StartCustomSpan(ctx, "service.process_tab_completion", "function")
+	ctx, sp := loop.StartCustomSpan(ctx, "service.process_tab_completion", constant.LoopSpanType_Function.String())
 	defer func() {
 		// 记录完整的响应内容到 CozeLoop
 		loop.SetSpanAllInOne(ctx, sp, req, result, err)
