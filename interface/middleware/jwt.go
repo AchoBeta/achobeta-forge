@@ -24,7 +24,7 @@ func JWTAuth(jwtUtil *util.JWTUtil, userService types.IUserService) gin.HandlerF
 		if authHeader == "" {
 			zlog.CtxWarnf(ctx, "missing authorization header")
 			r := response.NewResponse(gCtx)
-			r.Error(response.USER_NOT_LOGIN)
+			r.ErrorWithStatus(response.USER_NOT_LOGIN, 401)
 			gCtx.Abort()
 			return
 		}
@@ -34,7 +34,7 @@ func JWTAuth(jwtUtil *util.JWTUtil, userService types.IUserService) gin.HandlerF
 		if len(parts) != 2 || parts[0] != "Bearer" {
 			zlog.CtxWarnf(ctx, "invalid authorization header format")
 			r := response.NewResponse(gCtx)
-			r.Error(response.USER_NOT_LOGIN)
+			r.ErrorWithStatus(response.USER_NOT_LOGIN, 401)
 			gCtx.Abort()
 			return
 		}
@@ -52,9 +52,8 @@ func JWTAuth(jwtUtil *util.JWTUtil, userService types.IUserService) gin.HandlerF
 				msgCode = response.USER_NOT_LOGIN
 			}
 			
-			
 			r := response.NewResponse(gCtx)
-			r.Error(msgCode)
+			r.ErrorWithStatus(msgCode, 401)
 			gCtx.Abort()
 			return
 		}
@@ -64,7 +63,7 @@ func JWTAuth(jwtUtil *util.JWTUtil, userService types.IUserService) gin.HandlerF
 		if userID == "" {
 			zlog.CtxWarnf(ctx, "empty userID in token")
 			r := response.NewResponse(gCtx)
-			r.Error(response.USER_NOT_LOGIN)
+			r.ErrorWithStatus(response.USER_NOT_LOGIN, 401)
 			gCtx.Abort()
 			return
 		}
@@ -83,7 +82,12 @@ func JWTAuth(jwtUtil *util.JWTUtil, userService types.IUserService) gin.HandlerF
 
 			zlog.CtxWarnf(ctx, "failed to get user by ID: %v", err)
 			r := response.NewResponse(gCtx)
-			r.Error(msgCode)
+			// 权限不足返回403，其他错误返回401
+			httpStatus := 401
+			if msgCode == response.INSUFFICENT_PERMISSIONS {
+				httpStatus = 403
+			}
+			r.ErrorWithStatus(msgCode, httpStatus)
 			gCtx.Abort()
 			return
 		}
