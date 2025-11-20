@@ -60,8 +60,8 @@ var (
 
 	/* ai对话错误 5000~5999 */
 
-	INVALID_CONTENT_TYPE = MsgCode{Code: 5000, Msg: "只接受 application/json 或 multipart/form-data"}
-
+	INVALID_CONTENT_TYPE        = MsgCode{Code: 5000, Msg: "只接受 application/json 或 multipart/form-data"}
+	AI_CHAT_MESSAGE_MAX         = MsgCode{Code: 5001, Msg: "会话长度已达上限，请开启新的会话"}
 	CONVERSATION_ID_NOT_NULL    = MsgCode{Code: 5200, Msg: "会话ID不能为空"}
 	USER_ID_NOT_NULL            = MsgCode{Code: 5201, Msg: "用户ID不能为空"}
 	MAP_ID_NOT_NULL             = MsgCode{Code: 5202, Msg: "导图ID不能为空"}
