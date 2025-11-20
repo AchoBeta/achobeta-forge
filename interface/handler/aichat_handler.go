@@ -3,11 +3,20 @@ package handler
 import (
 	"context"
 	"fmt"
+	"forge/constant"
 	"forge/interface/caster"
 	"forge/interface/def"
+	"forge/pkg/log/zlog"
+	"forge/pkg/loop"
 )
 
-func (h *Handler) SendMessage(ctx context.Context, req *def.ProcessUserMessageRequest) (*def.ProcessUserMessageResponse, error) {
+func (h *Handler) SendMessage(ctx context.Context, req *def.ProcessUserMessageRequest) (resp *def.ProcessUserMessageResponse, err error) {
+	// 链路追踪
+	ctx, sp := loop.GetNewSpan(ctx, "handler.send_message", constant.LoopSpanType_Handle)
+	defer func() {
+		zlog.CtxAllInOne(ctx, "handler.send_message", req, resp, err)
+		loop.SetSpanAllInOne(ctx, sp, req, resp, err)
+	}()
 
 	//转 biz层 参数
 	params := caster.CastProcessUserMessageReq2Params(req)
@@ -17,7 +26,7 @@ func (h *Handler) SendMessage(ctx context.Context, req *def.ProcessUserMessageRe
 		return nil, err
 	}
 
-	resp := &def.ProcessUserMessageResponse{
+	resp = &def.ProcessUserMessageResponse{
 		Content:    aiMsg.Content,
 		NewMapJson: aiMsg.NewMapJson,
 		Success:    true,
@@ -105,7 +114,14 @@ func (h *Handler) UpdateConversationTitle(ctx context.Context, req *def.UpdateCo
 	return resp, nil
 }
 
-func (h *Handler) GenerateMindMap(ctx context.Context, req *def.GenerateMindMapRequest) (*def.GenerateMindMapResponse, error) {
+func (h *Handler) GenerateMindMap(ctx context.Context, req *def.GenerateMindMapRequest) (resp *def.GenerateMindMapResponse, err error) {
+	// 链路追踪
+	ctx, sp := loop.GetNewSpan(ctx, "handler.generate_mindmap", constant.LoopSpanType_Handle)
+	defer func() {
+		zlog.CtxAllInOne(ctx, "handler.generate_mindmap", req, resp, err)
+		loop.SetSpanAllInOne(ctx, sp, req, resp, err)
+	}()
+
 	params := caster.CastGenerateMindMapReq2Params(req)
 
 	res, err := h.AiChatService.GenerateMindMap(ctx, params)
@@ -113,7 +129,7 @@ func (h *Handler) GenerateMindMap(ctx context.Context, req *def.GenerateMindMapR
 		return nil, err
 	}
 
-	resp := &def.GenerateMindMapResponse{
+	resp = &def.GenerateMindMapResponse{
 		Success: true,
 		MapJson: res,
 	}
@@ -121,7 +137,14 @@ func (h *Handler) GenerateMindMap(ctx context.Context, req *def.GenerateMindMapR
 }
 
 // TabComplete 处理Tab补全请求
-func (h *Handler) TabComplete(ctx context.Context, req *def.TabCompletionRequest) (*def.TabCompletionResponse, error) {
+func (h *Handler) TabComplete(ctx context.Context, req *def.TabCompletionRequest) (resp *def.TabCompletionResponse, err error) {
+	// 链路追踪
+	ctx, sp := loop.GetNewSpan(ctx, "handler.tab_complete", constant.LoopSpanType_Handle)
+	defer func() {
+		zlog.CtxAllInOne(ctx, "handler.tab_complete", req, resp, err)
+		loop.SetSpanAllInOne(ctx, sp, req, resp, err)
+	}()
+
 	// 转换参数
 	params := caster.CastTabCompletionReq2Params(req)
 
@@ -131,7 +154,7 @@ func (h *Handler) TabComplete(ctx context.Context, req *def.TabCompletionRequest
 		return nil, err
 	}
 
-	resp := &def.TabCompletionResponse{
+	resp = &def.TabCompletionResponse{
 		CompletedText: completedText,
 		Success:       true,
 	}

@@ -22,6 +22,7 @@ type IConfig interface {
 	GetSMSConfig() SMSConfig
 	GetUniOfficeConfig() UniOfficeConfig
 	GetOAuthConfig() OAuthConfig // OAuth 第三方登录配置
+	GetCozeLoopConfig() CozeLoopConfig // CozeLoop 可观测性配置
 }
 
 var (
@@ -81,6 +82,9 @@ func (c *config) GetSMSConfig() SMSConfig { return c.SMSConfig }
 // oauth配置读取
 func (c *config) GetOAuthConfig() OAuthConfig { return c.OAuthConfig }
 
+// cozeloop配置读取
+func (c *config) GetCozeLoopConfig() CozeLoopConfig { return c.CozeLoopConfig }
+
 func mustInit(path string) *config {
 	// 初始化时间为东八区的时间
 	var cstZone = time.FixedZone("CST", 8*3600) // 东八
@@ -135,6 +139,7 @@ type config struct {
 	SMSConfig       SMSConfig         `mapstructure:"sms"`
 	UniOfficeConfig UniOfficeConfig   `mapstructure:"unioffice"`
 	OAuthConfig     OAuthConfig       `mapstructure:"oauth"`
+	CozeLoopConfig  CozeLoopConfig    `mapstructure:"cozeloop"`
 }
 
 type ApplicationConfig struct {
@@ -229,4 +234,12 @@ type OAuthConfig struct {
 	WechatAppSecret    string `mapstructure:"wechat_app_secret"`
 	WechatCallbackURL  string `mapstructure:"wechat_callback_url"`
 	SessionSecret      string `mapstructure:"session_secret"`
+}
+
+// CozeLoopConfig CozeLoop 可观测性配置
+type CozeLoopConfig struct {
+	WorkspaceID  string `mapstructure:"workspace_id"`
+	APIToken     string `mapstructure:"api_token"`
+	Enable       bool   `mapstructure:"enable"`
+	PromptTrace  bool   `mapstructure:"prompt_trace"`
 }

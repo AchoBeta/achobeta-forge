@@ -158,33 +158,6 @@ type QualityAssessmentTask struct {
 	MapData        string
 }
 
-// 发件箱事件
-type OutboxEvent struct {
-	EventID     string
-	EventType   string
-	AggregateID string // 业务聚合ID
-	Payload     interface{}
-	Status      string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	ProcessedAt *time.Time
-	RetryCount  int
-	LastError   string
-}
-
-// 发件箱事件状态
-const (
-	OUTBOX_STATUS_PENDING    = "pending"
-	OUTBOX_STATUS_PROCESSING = "processing"
-	OUTBOX_STATUS_COMPLETED  = "completed"
-	OUTBOX_STATUS_FAILED     = "failed"
-)
-
-// 发件箱事件类型
-const (
-	OUTBOX_EVENT_QUALITY_ASSESSMENT = "quality_assessment"
-)
-
 // JSONL导出相关实体
 type JSONLMessage struct {
 	Role    string

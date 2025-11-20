@@ -10,6 +10,7 @@ import (
 	"forge/biz/types"
 	"forge/infra/eino"
 	"forge/pkg/log/zlog"
+	"forge/pkg/loop"
 	"forge/pkg/queue"
 	"forge/util"
 	"math/rand"
@@ -44,7 +45,14 @@ func NewAiChatService(aiChatRepo repo.AiChatRepo, einoServer repo.EinoServer) *A
 	}
 }
 
-func (a *AiChatService) ProcessUserMessage(ctx context.Context, req *types.ProcessUserMessageParams) (types.AgentResponse, error) {
+func (a *AiChatService) ProcessUserMessage(ctx context.Context, req *types.ProcessUserMessageParams) (resp types.AgentResponse, err error) {
+	// 服务层链路追踪
+	ctx, sp := loop.StartCustomSpan(ctx, "service.process_user_message", "function")
+	defer func() {
+		// 记录完整的响应内容到 CozeLoop
+		loop.SetSpanAllInOne(ctx, sp, req, resp, err)
+	}()
+
 	user, ok := entity.GetUser(ctx)
 	if !ok {
 		zlog.CtxErrorf(ctx, "未能从上下文中获取用户信息")
@@ -212,7 +220,14 @@ func (a *AiChatService) UpdateConversationTitle(ctx context.Context, req *types.
 	return nil
 }
 
-func (a *AiChatService) GenerateMindMap(ctx context.Context, req *types.GenerateMindMapParams) (string, error) {
+func (a *AiChatService) GenerateMindMap(ctx context.Context, req *types.GenerateMindMapParams) (result string, err error) {
+	// 服务层链路追踪
+	ctx, sp := loop.StartCustomSpan(ctx, "service.generate_mindmap", "function")
+	defer func() {
+		// 记录完整的响应内容到 CozeLoop
+		loop.SetSpanAllInOne(ctx, sp, req, result, err)
+	}()
+
 	user, ok := entity.GetUser(ctx)
 	if !ok {
 		zlog.CtxErrorf(ctx, "未能从上下文中获取用户信息")
@@ -241,7 +256,14 @@ func (a *AiChatService) GenerateMindMap(ctx context.Context, req *types.Generate
 }
 
 // ProcessTabCompletion 处理Tab补全请求
-func (a *AiChatService) ProcessTabCompletion(ctx context.Context, req *types.TabCompletionParams) (string, error) {
+func (a *AiChatService) ProcessTabCompletion(ctx context.Context, req *types.TabCompletionParams) (result string, err error) {
+	// 服务层链路追踪
+	ctx, sp := loop.StartCustomSpan(ctx, "service.process_tab_completion", "function")
+	defer func() {
+		// 记录完整的响应内容到 CozeLoop
+		loop.SetSpanAllInOne(ctx, sp, req, result, err)
+	}()
+
 	user, ok := entity.GetUser(ctx)
 	if !ok {
 		zlog.CtxErrorf(ctx, "未能从上下文中获取用户信息")

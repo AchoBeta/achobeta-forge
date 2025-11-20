@@ -10,79 +10,65 @@ import (
 
 	"github.com/cloudwego/eino-ext/components/model/ark"
 	"github.com/cloudwego/eino/schema"
-	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
 	arkmodel "github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 )
 
 type QualityAssessmentClient struct {
 	ApiKey    string
 	ModelName string
-	ArkClient *arkruntime.Client
+	ChatModel *ark.ChatModel
 }
 
 func NewQualityAssessmentClient() *QualityAssessmentClient {
 	config := configs.Config().GetAiChatConfig()
+	
+	// 使用 Eino 框架创建模型客户端
+	ctx := context.Background()
+	chatModel, err := ark.NewChatModel(ctx, &ark.ChatModelConfig{
+		APIKey:   config.QualityApiKey,
+		Model:    config.QualityModelName,
+		Thinking: &arkmodel.Thinking{Type: arkmodel.ThinkingTypeDisabled},
+	})
+	if err != nil {
+		zlog.Errorf("创建质量评估模型失败: %v", err)
+		// 如果创建失败，返回 nil 模型，在调用时会处理
+	}
 
 	return &QualityAssessmentClient{
 		ApiKey:    config.QualityApiKey,
 		ModelName: config.QualityModelName,
-		ArkClient: arkruntime.NewClientWithApiKey(config.QualityApiKey),
+		ChatModel: chatModel,
 	}
 }
 
-// AssessQuality 评估用户输入的质量
+// AssessQuality 评估用户输入的质量 - 使用 Eino 框架确保被 CozeLoop 追踪
 func (q *QualityAssessmentClient) AssessQuality(ctx context.Context, userInput, mapData string) (int, error) {
-	// 构建质量评估提示词
-	systemPrompt := q.buildQualityAssessmentPrompt(userInput, mapData)
+	if q.ChatModel == nil {
+		return 0, fmt.Errorf("质量评估模型未初始化")
+	}
 
 	// 构建消息
-	messages := []*arkmodel.ChatCompletionMessage{
+	systemPrompt := q.buildQualityAssessmentPrompt(userInput, mapData)
+	messages := []*schema.Message{
 		{
-			Role: "system",
-			Content: &arkmodel.ChatCompletionMessageContent{
-				StringValue: &systemPrompt,
-			},
+			Content: systemPrompt,
+			Role:    schema.System,
 		},
 		{
-			Role: "user",
-			Content: &arkmodel.ChatCompletionMessageContent{
-				StringValue: &userInput,
-			},
+			Content: userInput,
+			Role:    schema.User,
 		},
 	}
 
-	// 构建请求
-	request := arkmodel.CreateChatCompletionRequest{
-		Model:    q.ModelName,
-		Messages: messages,
-		Thinking: &arkmodel.Thinking{Type: arkmodel.ThinkingTypeDisabled},
-	}
-
-	// 调用API
-	resp, err := q.ArkClient.CreateChatCompletion(ctx, request)
+	// 使用 Eino 框架调用，确保被 CozeLoop 回调追踪
+	resp, err := q.ChatModel.Generate(ctx, messages)
 	if err != nil {
-		zlog.CtxErrorf(ctx, "质量评估调用失败: %v", err)
-		return 0, fmt.Errorf("质量评估调用失败: %w", err)
-	}
-
-	if len(resp.Choices) == 0 {
-		return 0, fmt.Errorf("质量评估API返回结果为空")
-	}
-
-	// 提取返回内容
-	choice := resp.Choices[0]
-	messageContent := choice.Message.Content
-	var contentStr string
-	if messageContent.StringValue != nil {
-		contentStr = *messageContent.StringValue
-	} else if len(messageContent.ListValue) > 0 && messageContent.ListValue[0].Text != "" {
-		contentStr = messageContent.ListValue[0].Text
-	} else {
-		return 0, fmt.Errorf("质量评估API返回内容格式不正确")
+		zlog.CtxErrorf(ctx, "质量评估Eino调用失败: %v", err)
+		return 0, fmt.Errorf("质量评估Eino调用失败: %w", err)
 	}
 
 	// 解析质量评分
-	return q.parseQualityScore(contentStr)
+	return q.parseQualityScore(resp.Content)
 }
 
 // buildQualityAssessmentPrompt 构建质量评估提示词

@@ -9,78 +9,64 @@ import (
 
 	"github.com/cloudwego/eino-ext/components/model/ark"
 	"github.com/cloudwego/eino/schema"
-	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
 	arkmodel "github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 )
 
 type TabCompletionClient struct {
 	ApiKey    string
 	ModelName string
-	ArkClient *arkruntime.Client
+	ChatModel *ark.ChatModel
 }
 
 func NewTabCompletionClient() *TabCompletionClient {
 	config := configs.Config().GetAiChatConfig()
+	
+	// 使用 Eino 框架创建模型客户端
+	ctx := context.Background()
+	chatModel, err := ark.NewChatModel(ctx, &ark.ChatModelConfig{
+		APIKey:   config.TabApiKey,
+		Model:    config.TabModelName,
+		Thinking: &arkmodel.Thinking{Type: arkmodel.ThinkingTypeDisabled},
+	})
+	if err != nil {
+		zlog.Errorf("创建Tab补全模型失败: %v", err)
+		// 如果创建失败，返回 nil 模型，在调用时会处理
+	}
 
 	return &TabCompletionClient{
 		ApiKey:    config.TabApiKey,
 		ModelName: config.TabModelName,
-		ArkClient: arkruntime.NewClientWithApiKey(config.TabApiKey),
+		ChatModel: chatModel,
 	}
 }
 
-// TabComplete 处理Tab补全请求
+// TabComplete 处理Tab补全请求 - 使用 Eino 框架确保被 CozeLoop 追踪
 func (t *TabCompletionClient) TabComplete(ctx context.Context, userInput, mapData string, recentMessages []*entity.Message) (string, error) {
-	// 构建Tab补全提示词
-	systemPrompt := t.buildTabCompletionPrompt(userInput, mapData, recentMessages)
+	if t.ChatModel == nil {
+		return "", fmt.Errorf("Tab补全模型未初始化")
+	}
 
 	// 构建消息
-	messages := []*arkmodel.ChatCompletionMessage{
+	systemPrompt := t.buildTabCompletionPrompt(userInput, mapData, recentMessages)
+	messages := []*schema.Message{
 		{
-			Role: "system",
-			Content: &arkmodel.ChatCompletionMessageContent{
-				StringValue: &systemPrompt,
-			},
+			Content: systemPrompt,
+			Role:    schema.System,
 		},
 		{
-			Role: "user",
-			Content: &arkmodel.ChatCompletionMessageContent{
-				StringValue: &userInput,
-			},
+			Content: userInput,
+			Role:    schema.User,
 		},
 	}
 
-	// 构建请求
-	request := arkmodel.CreateChatCompletionRequest{
-		Model:    t.ModelName,
-		Messages: messages,
-		Thinking: &arkmodel.Thinking{Type: arkmodel.ThinkingTypeDisabled},
-	}
-
-	// 调用API
-	resp, err := t.ArkClient.CreateChatCompletion(ctx, request)
+	// 使用 Eino 框架调用，确保被 CozeLoop 回调追踪
+	resp, err := t.ChatModel.Generate(ctx, messages)
 	if err != nil {
-		zlog.CtxErrorf(ctx, "Tab补全调用失败: %v", err)
-		return "", fmt.Errorf("Tab补全调用失败: %w", err)
+		zlog.CtxErrorf(ctx, "Tab补全Eino调用失败: %v", err)
+		return "", fmt.Errorf("Tab补全Eino调用失败: %w", err)
 	}
 
-	if len(resp.Choices) == 0 {
-		return "", fmt.Errorf("Tab补全API返回结果为空")
-	}
-
-	// 提取返回内容
-	choice := resp.Choices[0]
-	messageContent := choice.Message.Content
-	var contentStr string
-	if messageContent.StringValue != nil {
-		contentStr = *messageContent.StringValue
-	} else if len(messageContent.ListValue) > 0 && messageContent.ListValue[0].Text != "" {
-		contentStr = messageContent.ListValue[0].Text
-	} else {
-		return "", fmt.Errorf("Tab补全API返回内容格式不正确")
-	}
-
-	return contentStr, nil
+	return resp.Content, nil
 }
 
 // buildTabCompletionPrompt 构建Tab补全提示词

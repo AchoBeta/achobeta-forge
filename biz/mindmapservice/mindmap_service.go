@@ -6,7 +6,9 @@ import (
 	"forge/biz/entity"
 	"forge/biz/repo"
 	"forge/biz/types"
+	"forge/constant"
 	"forge/pkg/log/zlog"
+	"forge/pkg/loop"
 	"forge/util"
 )
 
@@ -31,7 +33,14 @@ func NewMindMapServiceImpl(mindMapRepo repo.IMindMapRepo) *MindMapServiceImpl {
 }
 
 // CreateMindMap 创建思维导图（用户只能创建自己的思维导图）
-func (s *MindMapServiceImpl) CreateMindMap(ctx context.Context, req *types.CreateMindMapParams) (*entity.MindMap, error) {
+func (s *MindMapServiceImpl) CreateMindMap(ctx context.Context, req *types.CreateMindMapParams) (rsp *entity.MindMap, err error) {
+	// 服务层链路追踪
+	ctx, sp := loop.GetNewSpan(ctx, "service.create_mindmap", constant.LoopSpanType_Function)
+	defer func() {
+		// 记录完整的响应内容到 CozeLoop
+		loop.SetSpanAllInOne(ctx, sp, req, rsp, err)
+	}()
+
 	// 从JWT token上下文中获取用户信息
 	user, ok := entity.GetUser(ctx)
 	if !ok {
@@ -40,10 +49,11 @@ func (s *MindMapServiceImpl) CreateMindMap(ctx context.Context, req *types.Creat
 	}
 
 	// 生成思维导图ID
-	mapID, err := util.GenerateStringID()
-	if err != nil {
-		zlog.CtxErrorf(ctx, "failed to generate map id: %v", err)
-		return nil, ErrInternalError
+	mapID, genErr := util.GenerateStringID()
+	if genErr != nil {
+		zlog.CtxErrorf(ctx, "failed to generate map id: %v", genErr)
+		err = ErrInternalError
+		return nil, err
 	}
 
 	// 构建实体
@@ -74,6 +84,13 @@ func (s *MindMapServiceImpl) CreateMindMap(ctx context.Context, req *types.Creat
 
 // GetMindMap 获取思维导图（用户只能获取自己的思维导图）
 func (s *MindMapServiceImpl) GetMindMap(ctx context.Context, mapID string) (*entity.MindMap, error) {
+	// 服务层链路追踪
+	ctx, sp := loop.GetNewSpan(ctx, "service.get_mindmap", constant.LoopSpanType_Function)
+	defer func() {
+		var err error
+		loop.SetSpanAllInOne(ctx, sp, mapID, map[string]interface{}{"success": err == nil}, err)
+	}()
+
 	// 从JWT token上下文中获取用户信息
 	user, ok := entity.GetUser(ctx)
 	if !ok {
