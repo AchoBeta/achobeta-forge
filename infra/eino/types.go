@@ -30,7 +30,7 @@ func initGenerateMindMapMessage(text, userID string) []*schema.Message {
 		Role:    schema.System,
 	})
 	res = append(res, &schema.Message{
-		Content: fmt.Sprintf("userID请填写：%s \n用户文本：%s", userID, text),
+		Content: fmt.Sprintf("mapId请填写\"xxx\",userId请填写：%s \n用户文本：%s", userID, text),
 		Role:    schema.User,
 	})
 	return res

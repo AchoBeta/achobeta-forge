@@ -203,6 +203,7 @@ type AiChatConfig struct {
 	SystemPrompt         string `mapstructure:"system_prompt"`
 	UpdateSystemPrompt   string `mapstructure:"update_system_prompt"`
 	GenerateSystemPrompt string `mapstructure:"generate_system_prompt"`
+	//UpdateJsonSchema     string `mapstructure:"update_json_schema"`
 	// Tab补全模型配置
 	TabApiKey    string `mapstructure:"tab_api_key"`
 	TabModelName string `mapstructure:"tab_model_name"`

@@ -2,6 +2,7 @@ package eino
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"forge/biz/entity"
@@ -16,15 +17,16 @@ import (
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
-	arkmodel "github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
+	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 )
 
 type AiChatClient struct {
-	ApiKey       string
-	ModelName    string
-	Agent        compose.Runnable[[]*schema.Message, types.AgentResponse]
-	ToolAiClient *ark.ChatModel
-	ArkClient    *arkruntime.Client
+	ApiKey              string
+	ModelName           string
+	Agent               compose.Runnable[[]*schema.Message, types.AgentResponse]
+	ToolAiClient        *ark.ChatModel
+	GenerateMapAiClient *ark.ChatModel
+	ArkClient           *arkruntime.Client
 }
 
 type State struct {
@@ -39,6 +41,17 @@ func initState(ctx context.Context) *State {
 }
 
 func NewAiChatClient(apiKey, modelName string) repo.EinoServer {
+
+	var toolSchemaMap map[string]interface{}
+	if err := json.Unmarshal([]byte(mindMapSchemaString), &toolSchemaMap); err != nil {
+		panic(fmt.Sprintf("Schema解析失败: %v", err))
+	}
+
+	var generateSchemaMap map[string]interface{}
+	if err := json.Unmarshal([]byte(generateMindMapSchemaString), &generateSchemaMap); err != nil {
+		panic(fmt.Sprintf("Schema解析失败: %v", err))
+	}
+
 	ctx := context.Background()
 
 	var aiChatClient AiChatClient
@@ -47,11 +60,34 @@ func NewAiChatClient(apiKey, modelName string) repo.EinoServer {
 	toolModel, err := ark.NewChatModel(ctx, &ark.ChatModelConfig{
 		APIKey:   apiKey,
 		Model:    modelName,
-		Thinking: &arkmodel.Thinking{Type: arkmodel.ThinkingTypeDisabled},
+		Thinking: &model.Thinking{Type: model.ThinkingTypeDisabled},
+		ResponseFormat: &ark.ResponseFormat{Type: model.ResponseFormatJSONSchema, JSONSchema: &model.ResponseFormatJSONSchemaJSONSchemaParam{
+			Name:        "mindmap_editor",
+			Description: "思维导图编辑机器人输出，输出单行json，不允许有任何换行",
+			Schema:      toolSchemaMap,
+			Strict:      true,
+		}},
 	})
 	if toolModel == nil || err != nil {
 		zlog.Errorf("ToolAi模型连接失败: %v", err)
 		panic(fmt.Errorf("ToolAi模型连接失败: %v", err))
+	}
+
+	generateModel, err := ark.NewChatModel(ctx, &ark.ChatModelConfig{
+		APIKey:   apiKey,
+		Model:    modelName,
+		Thinking: &model.Thinking{Type: model.ThinkingTypeEnabled},
+		ResponseFormat: &ark.ResponseFormat{Type: model.ResponseFormatJSONSchema, JSONSchema: &model.ResponseFormatJSONSchemaJSONSchemaParam{
+			Name:        "mindmap_generator",
+			Description: "思维导图生成机器人输出，输出单行json，不允许有任何换行",
+			Schema:      generateSchemaMap,
+			Strict:      true,
+		}},
+	})
+
+	if generateModel == nil || err != nil {
+		zlog.Errorf("generateModel模型连接失败: %v", err)
+		panic(fmt.Errorf("generateModel模型连接失败: %v", err))
 	}
 
 	//toolAiClient = toolModel
@@ -59,13 +95,14 @@ func NewAiChatClient(apiKey, modelName string) repo.EinoServer {
 	aiChatClient.ApiKey = apiKey
 	aiChatClient.ModelName = modelName
 	aiChatClient.ToolAiClient = toolModel
+	aiChatClient.GenerateMapAiClient = generateModel
 	aiChatClient.ArkClient = arkruntime.NewClientWithApiKey(apiKey) // 初始化火山引擎客户端，复用避免重复创建
 
 	//构建agent
 	aiChatModel, err := ark.NewChatModel(ctx, &ark.ChatModelConfig{
 		APIKey:   apiKey,
 		Model:    modelName,
-		Thinking: &arkmodel.Thinking{Type: arkmodel.ThinkingTypeDisabled},
+		Thinking: &model.Thinking{Type: model.ThinkingTypeDisabled},
 	})
 	if aiChatModel == nil || err != nil {
 		zlog.Errorf("ai模型连接失败: %v", err)
@@ -215,21 +252,15 @@ func (a *AiChatClient) SendMessage(ctx context.Context, messages []*entity.Messa
 	return resp, nil
 }
 
-// 传入文本生成导图（使用结构化输出确保 JSON 格式准确）
+// 传入文本生成导图
 func (a *AiChatClient) GenerateMindMap(ctx context.Context, text, userID string) (string, error) {
-	// 使用与批量生成相同的结构化输出方式
-	messages := initGenerateMindMapMessage(text, userID)
+	message := initGenerateMindMapMessage(text, userID)
 
-	// 获取 JSON Schema
-	mindMapSchema := generationservice.GetMindMapJSONSchema()
-
-	// 使用结构化输出调用 API
-	resp, err := a.generateWithStructuredOutput(ctx, messages, mindMapSchema)
+	resp, err := a.GenerateMapAiClient.Generate(ctx, message)
 	if err != nil {
-		zlog.CtxErrorf(ctx, "模型调用失败: %v", err)
+		zlog.Errorf("模型调用失败%v", err)
 		return "", err
 	}
-
 	return resp.Content, nil
 }
 
@@ -253,7 +284,7 @@ func (a *AiChatClient) generateWithStructuredOutput(
 	client := a.ArkClient
 
 	// 转换消息格式
-	arkMessages := make([]*arkmodel.ChatCompletionMessage, 0, len(messages))
+	arkMessages := make([]*model.ChatCompletionMessage, 0, len(messages))
 	for _, msg := range messages {
 		role := ""
 		switch msg.Role {
@@ -267,19 +298,19 @@ func (a *AiChatClient) generateWithStructuredOutput(
 			role = "user"
 		}
 		// ChatCompletionMessageContent 需要包装字符串
-		content := &arkmodel.ChatCompletionMessageContent{
+		content := &model.ChatCompletionMessageContent{
 			StringValue: &msg.Content,
 		}
-		arkMessages = append(arkMessages, &arkmodel.ChatCompletionMessage{
+		arkMessages = append(arkMessages, &model.ChatCompletionMessage{
 			Role:    role,
 			Content: content,
 		})
 	}
 
 	// 构建结构化输出配置
-	responseFormat := &arkmodel.ResponseFormat{
-		Type: arkmodel.ResponseFormatJSONSchema,
-		JSONSchema: &arkmodel.ResponseFormatJSONSchemaJSONSchemaParam{
+	responseFormat := &model.ResponseFormat{
+		Type: model.ResponseFormatJSONSchema,
+		JSONSchema: &model.ResponseFormatJSONSchemaJSONSchemaParam{
 			Name:        "mindmap_schema",
 			Description: "思维导图JSON结构，包含title、desc、layout和递归的root节点树",
 			Schema:      jsonSchema,
@@ -288,11 +319,11 @@ func (a *AiChatClient) generateWithStructuredOutput(
 	}
 
 	// 构建请求（使用 CreateChatCompletionRequest 替代已废弃的 ChatCompletionRequest）
-	request := arkmodel.CreateChatCompletionRequest{
+	request := model.CreateChatCompletionRequest{
 		Model:          a.ModelName,
 		Messages:       arkMessages,
 		ResponseFormat: responseFormat,
-		Thinking:       &arkmodel.Thinking{Type: arkmodel.ThinkingTypeDisabled},
+		Thinking:       &model.Thinking{Type: model.ThinkingTypeDisabled},
 	}
 
 	// 调用 API
