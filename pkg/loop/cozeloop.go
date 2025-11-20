@@ -101,6 +101,12 @@ func StartCustomSpan(ctx context.Context, spanName string, spanType string) (con
 		if ok {
 			span.SetUserIDBaggage(ctx, user.UserID)
 		}
+		logid, ok := zlog.GetLogId(ctx)
+		if ok {
+			span.SetTags(ctx, map[string]interface{}{
+				"log_id": logid,
+			})
+		}
 	}
 
 	return ctx, span
@@ -124,6 +130,12 @@ func StartModelSpan(ctx context.Context, spanName string, modelProvider string, 
 		user, ok := entity.GetUser(ctx)
 		if ok {
 			span.SetUserIDBaggage(ctx, user.UserID)
+		}
+		logid, ok := zlog.GetLogId(ctx)
+		if ok {
+			span.SetTags(ctx, map[string]interface{}{
+				"log_id": logid,
+			})
 		}
 	}
 

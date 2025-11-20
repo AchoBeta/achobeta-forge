@@ -8,7 +8,6 @@ import (
 	"forge/pkg/log/zlog"
 	"forge/pkg/response"
 	"forge/util"
-	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -24,11 +23,8 @@ func JWTAuth(jwtUtil *util.JWTUtil, userService types.IUserService) gin.HandlerF
 		authHeader := gCtx.GetHeader("Authorization")
 		if authHeader == "" {
 			zlog.CtxWarnf(ctx, "missing authorization header")
-			gCtx.JSON(http.StatusUnauthorized, response.JsonMsgResult{
-				Code:    response.USER_NOT_LOGIN.Code,
-				Message: response.USER_NOT_LOGIN.Msg,
-				Data:    nil,
-			})
+			r := response.NewResponse(gCtx)
+			r.Error(response.USER_NOT_LOGIN)
 			gCtx.Abort()
 			return
 		}
@@ -37,11 +33,8 @@ func JWTAuth(jwtUtil *util.JWTUtil, userService types.IUserService) gin.HandlerF
 		parts := strings.SplitN(authHeader, " ", 2)
 		if len(parts) != 2 || parts[0] != "Bearer" {
 			zlog.CtxWarnf(ctx, "invalid authorization header format")
-			gCtx.JSON(http.StatusUnauthorized, response.JsonMsgResult{
-				Code:    response.USER_NOT_LOGIN.Code,
-				Message: response.USER_NOT_LOGIN.Msg,
-				Data:    nil,
-			})
+			r := response.NewResponse(gCtx)
+			r.Error(response.USER_NOT_LOGIN)
 			gCtx.Abort()
 			return
 		}
@@ -58,11 +51,10 @@ func JWTAuth(jwtUtil *util.JWTUtil, userService types.IUserService) gin.HandlerF
 			} else {
 				msgCode = response.USER_NOT_LOGIN
 			}
-			gCtx.JSON(http.StatusUnauthorized, response.JsonMsgResult{
-				Code:    msgCode.Code,
-				Message: msgCode.Msg,
-				Data:    nil,
-			})
+			
+			
+			r := response.NewResponse(gCtx)
+			r.Error(msgCode)
 			gCtx.Abort()
 			return
 		}
@@ -71,11 +63,8 @@ func JWTAuth(jwtUtil *util.JWTUtil, userService types.IUserService) gin.HandlerF
 		userID := claims.UserID
 		if userID == "" {
 			zlog.CtxWarnf(ctx, "empty userID in token")
-			gCtx.JSON(http.StatusUnauthorized, response.JsonMsgResult{
-				Code:    response.USER_NOT_LOGIN.Code,
-				Message: response.USER_NOT_LOGIN.Msg,
-				Data:    nil,
-			})
+			r := response.NewResponse(gCtx)
+			r.Error(response.USER_NOT_LOGIN)
 			gCtx.Abort()
 			return
 		}
@@ -93,17 +82,8 @@ func JWTAuth(jwtUtil *util.JWTUtil, userService types.IUserService) gin.HandlerF
 			}
 
 			zlog.CtxWarnf(ctx, "failed to get user by ID: %v", err)
-			// 用户不存在或权限不足，返回401 Unauthorized
-			statusCode := http.StatusUnauthorized
-			if msgCode == response.INSUFFICENT_PERMISSIONS {
-				// 权限不足也可返回403 Forbidden
-				statusCode = http.StatusForbidden
-			}
-			gCtx.JSON(statusCode, response.JsonMsgResult{
-				Code:    msgCode.Code,
-				Message: msgCode.Msg,
-				Data:    nil,
-			})
+			r := response.NewResponse(gCtx)
+			r.Error(msgCode)
 			gCtx.Abort()
 			return
 		}

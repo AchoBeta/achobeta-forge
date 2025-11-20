@@ -38,7 +38,10 @@ func AddTracer() gin.HandlerFunc {
 			gCtx.Request.Header.Set("X-Request-ID", logID)
 		}
 
-		// 增加Logid
+		// 设置 logid 到 Gin context
+		gCtx.Set(constant.LOGID, logID)
+
+		// 同时设置到 request context（为了兼容日志系统）
 		ctx := gCtx.Request.Context()
 		ctx = zlog.WithLogKey(ctx, zap.String(constant.LOGID, logID))
 

@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"forge/pkg/log/zlog"
-
 	"github.com/gin-gonic/gin"
 )
 
@@ -30,10 +28,16 @@ func NewResponse(c *gin.Context) *JsonMsgResponse {
 
 // injectLogID 将 response 注入 logid
 func (r *JsonMsgResponse) injectLogID(res JsonMsgResult) {
-	ctx := r.Ctx.Request.Context()
-	logID, ok := zlog.GetLogId(ctx)
-	if !ok || logID == "" {
-		// 如果没有 logid，直接返回原 response
+	// 从 Gin context 获取 logid
+	logID := ""
+	if value, exists := r.Ctx.Get("log_id"); exists {
+		if id, ok := value.(string); ok {
+			logID = id
+		}
+	}
+	
+	// 如果没有 logid，直接返回原 response
+	if logID == "" {
 		r.Ctx.JSON(http.StatusOK, res)
 		return
 	}
