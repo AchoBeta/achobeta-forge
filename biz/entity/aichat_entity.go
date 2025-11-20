@@ -26,13 +26,13 @@ const (
 type aiChatCtxKey struct{}
 
 type Message struct {
-	ID           string // 消息唯一ID
-	Content      string
-	Role         string
-	ToolCallID   string
-	ToolCalls    []schema.ToolCall
-	Timestamp    time.Time
-	QualityScore int // 0=未评估，1=高质量，-1=低质量
+	ID           string            `json:"id" ` // 消息唯一ID
+	Content      string            `json:"content"`
+	Role         string            `json:"role" `
+	ToolCallID   string            `json:"tool_call_id,omitempty" `
+	ToolCalls    []schema.ToolCall `json:"tool_calls,omitempty" `
+	Timestamp    time.Time         `json:"timestamp" `
+	QualityScore int               `json:"quality_score,omitempty"` // 0=未评估，1=高质量，-1=低质量
 }
 
 type Conversation struct {
