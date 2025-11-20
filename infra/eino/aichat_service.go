@@ -297,11 +297,13 @@ func (a *AiChatClient) GenerateMindMap(ctx context.Context, text, userID string)
 	// 获取 JSON Schema
 	mindMapSchema := generationservice.GetMindMapJSONSchema()
 
-	resp, err := a.GenerateMapAiClient.Generate(ctx, message)
+	// 使用结构化输出调用 API
+	resp, err := a.generateWithStructuredOutput(ctx, messages, mindMapSchema)
 	if err != nil {
-		zlog.Errorf("模型调用失败%v", err)
+		zlog.CtxErrorf(ctx, "模型调用失败: %v", err)
 		return "", err
 	}
+
 	return resp.Content, nil
 }
 
@@ -323,7 +325,7 @@ func (a *AiChatClient) generateWithStructuredOutput(
 	jsonSchema map[string]interface{},
 ) (result *schema.Message, err error) {
 	// 声明响应变量，使其在defer块中可用
-	var resp arkmodel.ChatCompletionResponse
+	var resp model.ChatCompletionResponse
 
 	// 创建手动 Model Span 用于追踪结构化输出调用
 	ctx, modelSpan := loop.StartModelSpan(ctx, "eino.generate_structured_output", "doubao", a.ModelName)
