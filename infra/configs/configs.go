@@ -204,6 +204,12 @@ type AiChatConfig struct {
 	UpdateSystemPrompt   string `mapstructure:"update_system_prompt"`
 	GenerateSystemPrompt string `mapstructure:"generate_system_prompt"`
 	//UpdateJsonSchema     string `mapstructure:"update_json_schema"`
+	// Tab补全模型配置
+	TabApiKey    string `mapstructure:"tab_api_key"`
+	TabModelName string `mapstructure:"tab_model_name"`
+	// 质量评估模型配置
+	QualityApiKey    string `mapstructure:"quality_api_key"`
+	QualityModelName string `mapstructure:"quality_model_name"`
 }
 
 type SMSConfig struct {

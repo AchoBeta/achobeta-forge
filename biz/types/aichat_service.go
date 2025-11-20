@@ -32,6 +32,15 @@ type IAiChatService interface {
 
 	//批量生成导图（Pro版本）
 	GenerateMindMapPro(ctx context.Context, req *GenerateMindMapProParams) (*entity.GenerationBatch, []*entity.GenerationResult, []*entity.Conversation, error)
+
+	//Tab补全
+	ProcessTabCompletion(ctx context.Context, req *TabCompletionParams) (string, error)
+
+	//导出高质量对话数据
+	ExportQualityConversations(ctx context.Context, req *ExportQualityDataParams) (string, int, error)
+
+	//手动触发质量评估
+	TriggerQualityAssessment(ctx context.Context, date string) (int, int, int, error)
 }
 
 type ProcessUserMessageParams struct {
@@ -82,4 +91,18 @@ type GenerationResultWithParams struct {
 	TopP        *float64 // Top-P参数
 	Strategy    int      // 生成策略
 	Error       error    // 生成错误
+}
+
+// TabCompletionParams Tab补全参数
+type TabCompletionParams struct {
+	ConversationID string
+	UserInput      string
+	MapData        string
+}
+
+// ExportQualityDataParams 导出质量数据参数
+type ExportQualityDataParams struct {
+	StartDate *string
+	EndDate   *string
+	Limit     int
 }

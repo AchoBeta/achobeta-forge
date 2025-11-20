@@ -34,12 +34,17 @@ func GetAiChatPersistence() repo.AiChatRepo { return cp }
 func (a *aiChatPersistence) GetConversation(ctx context.Context, conversationID, userID string) (*entity.Conversation, error) {
 	if conversationID == "" {
 		return nil, aichatservice.CONVERSATION_ID_NOT_NULL
-	} else if userID == "" {
-		return nil, aichatservice.USER_ID_NOT_NULL
 	}
 
 	var conversationPO po.ConversationPO
-	if err := a.db.WithContext(ctx).Model(&po.ConversationPO{}).Where("conversation_id = ? AND user_id = ?", conversationID, userID).First(&conversationPO).Error; err != nil {
+	query := a.db.WithContext(ctx).Model(&po.ConversationPO{}).Where("conversation_id = ?", conversationID)
+
+	// userID 为空时不进行用户ID过滤（用于导出场景）
+	if userID != "" {
+		query = query.Where("user_id = ?", userID)
+	}
+
+	if err := query.First(&conversationPO).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, aichatservice.CONVERSATION_NOT_EXIST
 		}
@@ -206,4 +211,74 @@ func checkConversationIsExist(ctx context.Context, a *aiChatPersistence, checkCo
 	} else {
 		return true, nil
 	}
+}
+
+// GetQualityConversations 获取高质量的对话数据用于导出
+// 注意：只获取真实用户对话，排除SFT训练数据
+func (a *aiChatPersistence) GetQualityConversations(ctx context.Context, startDate, endDate *string, limit int) ([]*entity.Conversation, error) {
+	var conversationPOs []po.ConversationPO
+	query := a.db.WithContext(ctx).Model(&po.ConversationPO{})
+
+	// 关键：排除SFT训练数据，只获取真实用户对话
+	query = query.Where("map_id NOT IN (?, ?)", entity.SFT_BATCH_GENERATION, entity.SFT_FEWSHOT_GENERATION)
+
+	// 添加时间范围过滤
+	if startDate != nil && *startDate != "" {
+		query = query.Where("created_at >= ?", *startDate)
+	}
+	if endDate != nil && *endDate != "" {
+		query = query.Where("created_at <= ?", *endDate)
+	}
+
+	// 添加限制
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+
+	// 按创建时间排序
+	query = query.Order("created_at DESC")
+
+	if err := query.Find(&conversationPOs).Error; err != nil {
+		return nil, fmt.Errorf("获取质量对话时数据库出错: %w", err)
+	}
+
+	return CastConversationPOs2DOs(conversationPOs)
+}
+
+// UpdateMessageQuality 更新特定消息的质量评分 - 使用原子操作
+func (a *aiChatPersistence) UpdateMessageQuality(ctx context.Context, conversationID string, messageID string, qualityScore int) error {
+	// 1. 先获取对话以找到消息在JSON数组中的索引
+	conversation, err := a.GetConversation(ctx, conversationID, "")
+	if err != nil {
+		return fmt.Errorf("获取对话失败: %w", err)
+	}
+
+	// 2. 查找消息在JSON数组中的索引
+	messageIndex := -1
+	for i, message := range conversation.Messages {
+		if message.ID == messageID {
+			messageIndex = i
+			break
+		}
+	}
+
+	if messageIndex == -1 {
+		return fmt.Errorf("在会话 %s 中未找到ID为 %s 的消息", conversationID, messageID)
+	}
+
+	// 3. 使用数据库原子的JSON_SET函数更新，避免竞态条件
+	jsonPath := fmt.Sprintf("$[%d].QualityScore", messageIndex)
+	result := a.db.WithContext(ctx).Model(&po.ConversationPO{}).
+		Where("conversation_id = ?", conversationID).
+		Update("messages", gorm.Expr("JSON_SET(messages, ?, ?)", jsonPath, qualityScore))
+
+	if result.Error != nil {
+		return fmt.Errorf("原子更新消息质量评分失败: %w", result.Error)
+	}
+
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("更新消息质量评分时没有行受到影响，会话ID: %s", conversationID)
+	}
+
+	return nil
 }

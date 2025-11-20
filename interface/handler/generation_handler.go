@@ -164,26 +164,14 @@ func (h *Handler) ExportSFTDataToFile(ctx context.Context, req *def.ExportSFTDat
 		zlog.CtxAllInOne(ctx, "handler.export_sft_data_to_file", req, map[string]interface{}{"filename": filename, "dataLen": len(jsonlData)}, err)
 	}()
 
-	// 获取用户信息
-	user, ok := entity.GetUser(ctx)
-	if !ok {
-		err = ErrPermissionDenied
-		return
-	}
-
-	userID := user.UserID
-	if req.UserID != "" && req.UserID != userID {
-		userID = req.UserID
-	}
-
 	// 默认minLossWeight=1.0（只导出人工标注）
 	minLossWeight := req.MinLossWeight
 	if minLossWeight == 0 {
 		minLossWeight = 1.0
 	}
 
-	// 调用服务层导出（返回JSONL数据和文件名）
-	jsonlData, filename, err = h.GenerationService.ExportSFTDataToFile(ctx, req.StartDate, req.EndDate, userID, minLossWeight)
+	// 调用服务层导出，不传 userID，导出所有用户的数据
+	jsonlData, filename, err = h.GenerationService.ExportSFTDataToFile(ctx, req.StartDate, req.EndDate, "", minLossWeight)
 	if err != nil {
 		return "", "", err
 	}
@@ -197,23 +185,13 @@ func (h *Handler) ExportSFTSessionDataToFile(ctx context.Context, req *def.Expor
 		zlog.CtxAllInOne(ctx, "handler.export_sft_session_data_to_file", req, map[string]interface{}{"filename": filename, "dataLen": len(jsonlData)}, err)
 	}()
 
-	user, ok := entity.GetUser(ctx)
-	if !ok {
-		err = ErrPermissionDenied
-		return
-	}
-
-	userID := user.UserID
-	if req.UserID != "" && req.UserID != userID {
-		userID = req.UserID
-	}
-
 	minLossWeight := req.MinLossWeight
 	if minLossWeight == 0 {
 		minLossWeight = 1.0
 	}
 
-	jsonlData, filename, err = h.GenerationService.ExportSFTSessionDataToFile(ctx, req.StartDate, req.EndDate, userID, minLossWeight)
+	// 调用服务层导出，不传 userID，导出所有用户的数据
+	jsonlData, filename, err = h.GenerationService.ExportSFTSessionDataToFile(ctx, req.StartDate, req.EndDate, "", minLossWeight)
 	if err != nil {
 		return "", "", err
 	}
@@ -223,17 +201,6 @@ func (h *Handler) ExportSFTSessionDataToFile(ctx context.Context, req *def.Expor
 
 // ExportDPOData 导出DPO数据
 func (h *Handler) ExportDPOData(ctx context.Context, req *def.ExportSFTDataReq) (string, error) {
-	// 获取用户信息
-	user, ok := entity.GetUser(ctx)
-	if !ok {
-		return "", ErrPermissionDenied
-	}
-
-	userID := user.UserID
-	if req.UserID != "" && req.UserID != userID {
-		userID = req.UserID
-	}
-
-	// 调用服务层导出
-	return h.GenerationService.ExportDPOData(ctx, req.StartDate, req.EndDate, userID)
+	// 调用服务层导出，不传 userID，导出所有用户的数据
+	return h.GenerationService.ExportDPOData(ctx, req.StartDate, req.EndDate, "")
 }
