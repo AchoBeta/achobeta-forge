@@ -322,33 +322,31 @@ func (a *AiChatClient) handleStreaming(
 
 	// 处理流式响应
 	for {
+		// 读取流式数据
+		chunkData, err := stream.Recv()
+		if err != nil {
+			if err == io.EOF {
+				chunkChan <- types.StreamChunk{IsLast: true}
+			} else {
+				// The underlying stream should return an error on context cancellation.
+				chunkChan <- types.StreamChunk{Error: err}
+			}
+			return
+		}
+
+		if chunkData.Content == "" {
+			continue
+		}
+
+		// 发送数据块，同时检查上下文是否被取消
 		select {
+		case chunkChan <- types.StreamChunk{
+			Content: chunkData.Content,
+			IsLast:  false,
+		}:
 		case <-ctx.Done():
-			// 上下文被取消
 			chunkChan <- types.StreamChunk{Error: ctx.Err()}
 			return
-
-		default:
-			// 读取流式数据
-			chunkData, err := stream.Recv()
-			if err != nil {
-				if err == io.EOF {
-					chunkChan <- types.StreamChunk{IsLast: true}
-					return
-				}
-				chunkChan <- types.StreamChunk{Error: err}
-				return
-			}
-
-			if chunkData.Content == "" {
-				continue
-			}
-
-			// 发送数据块
-			chunkChan <- types.StreamChunk{
-				Content: chunkData.Content,
-				IsLast:  false,
-			}
 		}
 	}
 }

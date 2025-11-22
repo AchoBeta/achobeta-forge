@@ -109,25 +109,8 @@ func SendMessageStream() gin.HandlerFunc {
 
 		writer := &outputPort.GinSSEWriter{Ctx: gCtx}
 
-		resp, err := handler.GetHandler().SendMessageStream(ctx, &req, writer)
+		handler.GetHandler().SendMessageStream(ctx, &req, writer)
 
-		zlog.CtxAllInOne(ctx, "send_message", map[string]interface{}{"req": req}, resp, err)
-
-		r := response.NewResponse(gCtx)
-		if err != nil {
-			msgCode := aiChatServiceErrorToMsgCode(err)
-			if msgCode == response.COMMON_FAIL {
-				msgCode.Msg = err.Error()
-			}
-			gCtx.JSON(http.StatusOK, response.JsonMsgResult{
-				Code:    msgCode.Code,
-				Message: msgCode.Msg,
-				Data:    def.ProcessUserMessageResponse{Success: false},
-			})
-			return
-		} else {
-			r.Success(resp)
-		}
 	}
 }
 
