@@ -267,7 +267,9 @@ func (a *aiChatPersistence) UpdateMessageQuality(ctx context.Context, conversati
 	}
 
 	// 3. 使用数据库原子的JSON_SET函数更新，避免竞态条件
-	jsonPath := fmt.Sprintf("$[%d].QualityScore", messageIndex)
+	// TODO: 不优雅，后面改
+	// 注意：字段名必须与Message结构体的JSON标签一致（quality_score）
+	jsonPath := fmt.Sprintf("$[%d].quality_score", messageIndex)
 	result := a.db.WithContext(ctx).Model(&po.ConversationPO{}).
 		Where("conversation_id = ?", conversationID).
 		Update("messages", gorm.Expr("JSON_SET(messages, ?, ?)", jsonPath, qualityScore))
