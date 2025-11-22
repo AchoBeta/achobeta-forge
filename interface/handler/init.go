@@ -4,6 +4,7 @@ import (
 	"context"
 	"forge/biz/types"
 	"forge/interface/def"
+	"forge/interface/outputPort"
 )
 
 type IHandler interface {
@@ -38,6 +39,7 @@ type IHandler interface {
 
 	//AiChat: ai对话相关
 	SendMessage(ctx context.Context, req *def.ProcessUserMessageRequest) (*def.ProcessUserMessageResponse, error)
+	SendMessageStream(ctx context.Context, req *def.ProcessUserMessageRequest, writer *outputPort.GinSSEWriter) (resp *def.ProcessUserMessageResponse, err error)
 	SaveNewConversation(ctx context.Context, req *def.SaveNewConversationRequest) (*def.SaveNewConversationResponse, error)
 	GetConversationList(ctx context.Context, req *def.GetConversationListRequest) (*def.GetConversationListResponse, error)
 	DelConversation(ctx context.Context, req *def.DelConversationRequest) (*def.DelConversationResponse, error)

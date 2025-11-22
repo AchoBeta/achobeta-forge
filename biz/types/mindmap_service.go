@@ -37,3 +37,10 @@ type UpdateMindMapParams struct {
 	Layout *string
 	Data   *entity.MindMapData
 }
+
+// 定义流式数据块
+type StreamChunk struct {
+	Content string
+	IsLast  bool
+	Error   error
+}

@@ -12,6 +12,7 @@ import (
 	"forge/infra/configs"
 	"forge/pkg/log/zlog"
 	"forge/pkg/loop"
+	"io"
 	"sync"
 
 	"github.com/cloudwego/eino-ext/callbacks/cozeloop"
@@ -287,6 +288,69 @@ func (a *AiChatClient) SendMessage(ctx context.Context, messages []*entity.Messa
 		return types.AgentResponse{}, err
 	}
 	return resp, nil
+}
+
+func (a *AiChatClient) SendMessageStream(ctx context.Context, messages []*entity.Message) (<-chan types.StreamChunk, error) {
+
+	// 创建通道用于传输流式数据
+	chunkChan := make(chan types.StreamChunk, 10)
+
+	go a.handleStreaming(ctx, messages, chunkChan)
+
+	return chunkChan, nil
+}
+
+// 异步返回分块信息
+func (a *AiChatClient) handleStreaming(
+	ctx context.Context,
+	messages []*entity.Message,
+	chunkChan chan<- types.StreamChunk,
+) {
+	defer close(chunkChan) // 确保通道被关闭
+
+	// 将消息转换为Eino框架需要的输入格式
+	input := messagesDo2Input(messages)
+
+	//调用流式生成
+	stream, err := a.GenerateMapAiClient.Stream(ctx, input)
+
+	if err != nil {
+		zlog.Errorf("流式模型调用失败: %v", err)
+		chunkChan <- types.StreamChunk{Error: err}
+		return
+	}
+
+	// 处理流式响应
+	for {
+		select {
+		case <-ctx.Done():
+			// 上下文被取消
+			chunkChan <- types.StreamChunk{Error: ctx.Err()}
+			return
+
+		default:
+			// 读取流式数据
+			chunkData, err := stream.Recv()
+			if err != nil {
+				if err == io.EOF {
+					chunkChan <- types.StreamChunk{IsLast: true}
+					return
+				}
+				chunkChan <- types.StreamChunk{Error: err}
+				return
+			}
+
+			if chunkData.Content == "" {
+				continue
+			}
+
+			// 发送数据块
+			chunkChan <- types.StreamChunk{
+				Content: chunkData.Content,
+				IsLast:  false,
+			}
+		}
+	}
 }
 
 // 传入文本生成导图（使用结构化输出确保 JSON 格式准确）

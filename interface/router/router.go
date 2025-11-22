@@ -161,6 +161,8 @@ func loadAiChat(r *gin.RouterGroup) {
 	// [POST] /api/biz/v1/aichat/send_message
 	r.Handle(POST, "send_message", SendMessage())
 
+	r.Handle(POST, "send_message_stream", SendMessageStream())
+
 	//新增会话
 	// [POST] /api/biz/v1/aichat/save_conversation
 	r.Handle(POST, "save_conversation", SaveNewConversation())

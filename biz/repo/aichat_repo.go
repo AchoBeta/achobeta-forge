@@ -35,7 +35,7 @@ type AiChatRepo interface {
 type EinoServer interface {
 	//向ai发送消息
 	SendMessage(ctx context.Context, messages []*entity.Message) (types.AgentResponse, error)
-
+	SendMessageStream(ctx context.Context, messages []*entity.Message) (<-chan types.StreamChunk, error)
 	//生成导图
 	GenerateMindMap(ctx context.Context, text, userID string) (string, error)
 

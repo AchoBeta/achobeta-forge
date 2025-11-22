@@ -3,9 +3,11 @@ package handler
 import (
 	"context"
 	"fmt"
+	"forge/biz/types"
 	"forge/constant"
 	"forge/interface/caster"
 	"forge/interface/def"
+	"forge/interface/outputPort"
 	"forge/pkg/log/zlog"
 	"forge/pkg/loop"
 )
@@ -33,6 +35,41 @@ func (h *Handler) SendMessage(ctx context.Context, req *def.ProcessUserMessageRe
 	}
 
 	return resp, nil
+}
+
+func (h *Handler) SendMessageStream(ctx context.Context, req *def.ProcessUserMessageRequest, writer *outputPort.GinSSEWriter) (resp *def.ProcessUserMessageResponse, err error) {
+	// 链路追踪
+	ctx, sp := loop.GetNewSpan(ctx, "handler.send_message", constant.LoopSpanType_Handle)
+	defer func() {
+		zlog.CtxAllInOne(ctx, "handler.send_message", req, resp, err)
+		loop.SetSpanAllInOne(ctx, sp, req, resp, err)
+	}()
+
+	//转 biz层 参数
+	params := caster.CastProcessUserMessageReq2Params(req)
+
+	err = h.AiChatService.ProcessUserMessageStream(ctx, params, func(chunk types.StreamChunk) error {
+		// 当Service调用onChunk(chunk)时，就会执行这里的代码
+		return h.sendSSEChunk(writer, chunk) // 将chunk发送给前端
+	})
+
+	if err != nil {
+		h.sendSSEError(writer, err)
+		return nil, err
+	}
+
+	return &def.ProcessUserMessageResponse{}, nil
+}
+
+func (h *Handler) sendSSEChunk(writer *outputPort.GinSSEWriter, chunk types.StreamChunk) error {
+	err := writer.WriteChunk(chunk)
+
+	return err
+}
+
+func (h *Handler) sendSSEError(writer *outputPort.GinSSEWriter, err error) {
+	fmt.Fprintf(writer.Ctx.Writer, "data: %s\n\n", err.Error())
+	writer.Ctx.Writer.Flush()
 }
 
 func (h *Handler) SaveNewConversation(ctx context.Context, req *def.SaveNewConversationRequest) (*def.SaveNewConversationResponse, error) {

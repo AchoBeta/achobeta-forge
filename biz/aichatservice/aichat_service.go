@@ -141,6 +141,118 @@ func (a *AiChatService) ProcessUserMessage(ctx context.Context, req *types.Proce
 	return aiMsg, nil
 }
 
+func (a *AiChatService) ProcessUserMessageStream(
+	ctx context.Context,
+	req *types.ProcessUserMessageParams,
+	onChunk func(chunk types.StreamChunk) error,
+) (err error) {
+
+	user, ok := entity.GetUser(ctx)
+	if !ok {
+		zlog.CtxErrorf(ctx, "未能从上下文中获取用户信息")
+		return AI_CHAT_PERMISSION_DENIED
+	}
+
+	conversation, err := a.aiChatRepo.GetConversation(ctx, req.ConversationID, user.UserID)
+	if err != nil {
+		return err
+	}
+
+	//长度限制o
+	if len(conversation.Messages) > 100 {
+		return AI_CHAT_MESSAGE_MAX
+	}
+
+	//将数据写入ctx
+	ctx = entity.WithConversation(ctx, conversation)
+
+	//更新导图数据
+	conversation.UpdateMapData(req.MapData)
+	//更新导图提示词
+	conversation.ProcessSystemPrompt()
+
+	//添加用户聊天记录
+	userMessage, addMsgErr := conversation.AddMessage(req.Message, entity.USER, "", nil)
+	if addMsgErr != nil {
+		zlog.CtxWarnf(ctx, "添加用户消息时出现警告: %v", addMsgErr)
+	}
+
+	//调用ai 返回ai消息
+	chunkChan, err := a.einoServer.SendMessageStream(ctx, conversation.Messages)
+	var allMsg strings.Builder
+	if err != nil {
+		return err
+	}
+
+	for chunk := range chunkChan {
+		if chunk.Error != nil {
+			return chunk.Error
+		}
+
+		if err := onChunk(chunk); err != nil {
+			return err
+		}
+
+		allMsg.WriteString(chunk.Content)
+
+		if chunk.IsLast {
+			break
+		}
+	}
+
+	//添加ai消息
+	aiMsg := types.AgentResponse{
+		Content: allMsg.String(),
+	}
+	_, addAiMsgErr := conversation.AddMessage(allMsg.String(), entity.ASSISTANT, "", aiMsg.ToolCalls)
+	if addAiMsgErr != nil {
+		zlog.CtxWarnf(ctx, "添加AI消息时出现警告: %v", addAiMsgErr)
+	}
+	if aiMsg.NewMapJson != "" {
+		_, addToolMsgErr := conversation.AddMessage(aiMsg.NewMapJson, entity.TOOL, aiMsg.ToolCallID, nil)
+		if addToolMsgErr != nil {
+			zlog.CtxWarnf(ctx, "添加工具消息时出现警告: %v", addToolMsgErr)
+		}
+	}
+
+	//更新会话聊天记录
+	err = a.aiChatRepo.UpdateConversationMessage(ctx, conversation)
+	if err != nil {
+		return err
+	}
+
+	// 只对真实用户对话进行质量评估，排除SFT训练数据
+	// 使用随机沉睡+重试的简化方案
+	if conversation.IsRealUserConversation() {
+		// 将用户消息加入质量评估队列（异步处理，不影响聊天响应）
+		go func() {
+			// 随机沉睡 50-200ms，减少竞态条件概率
+			randomDelay := time.Duration(50+rand.Intn(150)) * time.Millisecond
+			time.Sleep(randomDelay)
+
+			task := &entity.QualityAssessmentTask{
+				MessageID:      userMessage.ID,
+				MessageContent: userMessage.Content,
+				ConversationID: req.ConversationID,
+				MapData:        req.MapData,
+			}
+
+			qualityQueue := queue.GetQualityQueue()
+			if qualityQueue != nil {
+				if err := qualityQueue.EnqueueTask(task); err != nil {
+					zlog.Warnf("将用户消息加入质量评估队列失败: %v, 会话ID: %s, 消息ID: %s",
+						err, req.ConversationID, userMessage.ID)
+				} else {
+					zlog.Infof("用户消息已加入质量评估队列: 会话ID=%s, 消息ID=%s",
+						req.ConversationID, userMessage.ID)
+				}
+			}
+		}()
+	}
+
+	return nil
+}
+
 func (a *AiChatService) SaveNewConversation(ctx context.Context, req *types.SaveNewConversationParams) (string, error) {
 	user, ok := entity.GetUser(ctx)
 	if !ok {
