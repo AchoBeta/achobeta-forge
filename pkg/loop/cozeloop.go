@@ -75,7 +75,6 @@ func StartRootSpan(ctx context.Context, spanName string) (context.Context, cozel
 		if ok {
 			span.SetUserIDBaggage(ctx, user.UserID)
 		}
-		// 注意：trace_id 由 CozeLoop SDK 自动管理，不需要手动设置
 	}
 
 	return ctx, span
@@ -96,13 +95,13 @@ func StartCustomSpan(ctx context.Context, spanName string, spanType string) (con
 		if ok {
 			span.SetUserIDBaggage(ctx, user.UserID)
 		}
-		// 注意：trace_id 由 CozeLoop SDK 自动管理，不需要手动设置
 	}
 
 	return ctx, span
 }
 
 // StartModelSpan 创建 Model Span（用于 AI 模型调用）
+// 注意：trace_id 由 CozeLoop SDK 自动管理，不需要手动设置
 func StartModelSpan(ctx context.Context, spanName string, modelProvider string, modelName string) (context.Context, cozeloop.Span) {
 	if !isEnabled || client == nil {
 		return ctx, nil
@@ -121,7 +120,6 @@ func StartModelSpan(ctx context.Context, spanName string, modelProvider string, 
 		if ok {
 			span.SetUserIDBaggage(ctx, user.UserID)
 		}
-		// 注意：trace_id 由 CozeLoop SDK 自动管理，不需要手动设置
 	}
 
 	return ctx, span

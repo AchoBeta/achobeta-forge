@@ -57,6 +57,8 @@ func AddTracer() gin.HandlerFunc {
 
 		// 集成 CozeLoop 链路追踪 - 创建 Root Span
 		var span cozeloop.Span
+		var traceID string
+
 		if loop.IsEnabled() {
 			// 构建 span 名称：HTTP方法 + 路径
 			spanName := gCtx.Request.Method + " " + gCtx.FullPath()
@@ -67,16 +69,11 @@ func AddTracer() gin.HandlerFunc {
 			// 创建 Root Span
 			ctx, span = loop.StartRootSpan(ctx, spanName)
 
-			// 从 CozeLoop span 获取 trace_id 并存储到 context
+			// 从 CozeLoop span 获取 trace_id
 			if span != nil {
-				traceID := span.GetTraceID()
-				if traceID != "" {
-					ctx = trace.SetTraceID(ctx, traceID)
-				}
-			}
+				traceID = span.GetTraceID()
 
-			// 记录完整的请求信息
-			if span != nil {
+				// 记录完整的请求信息
 				span.SetInput(ctx, requestBody)
 
 				// 设置标签和元数据（只设置 HTTP 相关的）
@@ -92,10 +89,11 @@ func AddTracer() gin.HandlerFunc {
 			}
 		}
 
-		// 确保 trace_id 已设置（如果 CozeLoop 未启用或 span 为 nil，生成 fallback trace_id）
-		if _, ok := trace.GetTraceID(ctx); !ok {
-			ctx = trace.SetTraceID(ctx, trace.GenerateTraceID())
+		// 如果 trace_id 为空，生成 fallback trace_id
+		if traceID == "" {
+			traceID = trace.GenerateTraceID()
 		}
+		ctx = trace.SetTraceID(ctx, traceID)
 
 		gCtx.Request = gCtx.Request.WithContext(ctx)
 
