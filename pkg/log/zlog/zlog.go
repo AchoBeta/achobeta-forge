@@ -3,7 +3,7 @@ package zlog
 import (
 	"context"
 	"fmt"
-	"forge/constant"
+	"forge/pkg/trace"
 	"reflect"
 	"strings"
 
@@ -36,28 +36,11 @@ func WithLogKey(ctx context.Context, fields ...zapcore.Field) context.Context {
 	// 深拷贝防止污染
 	detail = gslice.Clone(detail)
 	detail = append(detail, fields...)
-	
+
 	// 设置logger和logDetail
 	ctx = context.WithValue(ctx, loggerKey, withContext(ctx).With(fields...))
 	ctx = context.WithValue(ctx, logDetail, detail)
 	return ctx
-}
-
-// 通过ctx获得logid
-func GetLogId(ctx context.Context) (string, bool) {
-	_detail := ctx.Value(logDetail)
-	if _detail == nil {
-		return "", false
-	}
-	detail := _detail.([]zapcore.Field)
-	find := gslice.Find(detail, func(field zapcore.Field) bool {
-		return field.Key == constant.LOGID
-	})
-	logid, ok := find.Get()
-	if !ok {
-		return "", false
-	}
-	return logid.String, true
 }
 
 func InitLogger(zapLogger *zap.Logger) {
@@ -69,9 +52,17 @@ func withContext(ctx context.Context) *zap.Logger {
 	if ctx == nil {
 		return logger
 	}
+
+	// 如果 context 中有 logger，直接返回（已经包含了字段）
 	if ctxLogger, ok := ctx.Value(loggerKey).(*zap.Logger); ok {
 		return ctxLogger
 	}
+
+	// 如果 context 中没有 logger，自动从 trace 模块获取 trace_id 并添加到 logger
+	if traceID, ok := trace.GetTraceID(ctx); ok {
+		return logger.With(zap.String("trace_id", traceID))
+	}
+
 	return logger
 }
 

@@ -5,15 +5,16 @@ import (
 	"errors"
 	"fmt"
 	"forge/pkg/log/zlog"
-	"github.com/unidoc/unioffice/v2/document"
-	"github.com/unidoc/unioffice/v2/presentation"
-	"github.com/unidoc/unipdf/v4/extractor"
-	"github.com/unidoc/unipdf/v4/model"
 	"io"
 	"mime/multipart"
 	"net/http"
 	"path/filepath"
 	"strings"
+
+	"github.com/unidoc/unioffice/v2/document"
+	"github.com/unidoc/unioffice/v2/presentation"
+	"github.com/unidoc/unipdf/v4/extractor"
+	"github.com/unidoc/unipdf/v4/model"
 )
 
 // 定义MIME类型常量
