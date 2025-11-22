@@ -568,8 +568,8 @@ func (a *AiChatService) isGoodTruncationPoint(r rune) bool {
 
 // buildTabCompletionRecord 构建Tab补全JSONL记录
 func (a *AiChatService) buildTabCompletionRecord(userInput, fullContent, mapData string) entity.JSONLRecord {
-	// 构建系统提示词
-	systemPrompt := a.buildTabCompletionSystemPrompt(mapData)
+	// 构建系统提示词（包含实际用户输入，与运行时保持一致）
+	systemPrompt := a.buildTabCompletionSystemPrompt(userInput, mapData)
 
 	return entity.JSONLRecord{
 		Messages: []entity.JSONLMessage{
@@ -590,16 +590,53 @@ func (a *AiChatService) buildTabCompletionRecord(userInput, fullContent, mapData
 }
 
 // buildTabCompletionSystemPrompt 构建Tab补全系统提示词
-func (a *AiChatService) buildTabCompletionSystemPrompt(mapData string) string {
-	basePrompt := `你是一个专门服务于一款思维导图树产品中的提问补全助手，猜测用户下一步输入，帮助用户继续思考和完善导图，而不是直接给出知识答案。
-
-请根据以下信息，补全用户当前输入，帮助用户继续思考。提示问题必须完整保留用户已输入的内容，并且以口语化的方式提出，具体且可执行。`
-
-	if mapData != "" && mapData != "{}" {
-		return fmt.Sprintf("%s\n\n【导图上下文】\n%s", basePrompt, mapData)
+// 训练和运行时使用相同的提示词模板，确保一致性
+func (a *AiChatService) buildTabCompletionSystemPrompt(userInput, mapData string) string {
+	// 如果mapData为空，使用默认值
+	if mapData == "" {
+		mapData = "{}"
 	}
 
-	return basePrompt
+	// 构建提示词模板（与运行时完全一致）
+	prompt := `你是一款思维导图树产品中"提问tab"的补全助手，核心任务是站在用户视角，基于当前导图树内容和用户已输入的句子，猜测用户下一步可能的思考方向，生成能帮助用户继续思考、提问知识点或完善导图的提示问题（禁止直接给出知识答案）。
+
+首先，请查看用户当前输入的内容：
+
+<current_input>
+
+` + userInput + `
+
+</current_input>
+
+然后，请参考当前的导图树JSON数据：
+
+<mind_map>
+
+` + mapData + `
+
+</mind_map>
+
+生成提示问题时，必须严格遵守以下规则：
+
+1. 完全模拟用户视角思考，禁止出现脱离用户视角的表述（如使用"你"称呼用户、反问用户等，也不要出现“呢”等语气词，本质上你就是用户本人的思考延伸）
+
+2. 提示问题需口语化、具体、可执行，能直接引导用户进一步完善导图
+
+3. 输出格式固定：采用"用户输入原话+补充提问"的AB形式，**不得修改用户输入的原句**
+
+4. 每次仅输出1条的提示问题/长句，无需额外说明
+
+示例参考：
+
+- 用户输入："这个导图的核心结论" → 输出："这个导图的核心结论再具体一点"
+
+- 用户输入："第二个分支下面" → 输出："第二个分支下面是不是还可以拆一两个更细的子分支？"
+
+- 用户输入："第三个分支和第二个" → 输出："第三个分支和第二个分支之间，有哪些共同点可以合并？"
+
+请直接输出符合要求的提示问题，无需其他内容。`
+
+	return prompt
 }
 
 // TODO: updateConversationWithOutbox - 事务发件箱模式（未来高并发时启用）
