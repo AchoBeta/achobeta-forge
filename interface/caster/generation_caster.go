@@ -37,13 +37,13 @@ func CastGenerationBatchDO2DTO(batch *entity.GenerationBatch) *def.GenerationBat
 // CastGenerationResultDO2DTO 实体转DTO
 func CastGenerationResultDO2DTO(result *entity.GenerationResult) *def.GenerationResultDTO {
 	return &def.GenerationResultDTO{
-		ResultID:       result.ResultID,
-		BatchID:        result.BatchID,
-		ConversationID: result.ConversationID,
-		MapJSON:        result.MapJSON,
-		Label:          result.Label,
-		LabeledAt:      result.LabeledAt,
-		CreatedAt:      result.CreatedAt,
+		ResultID: result.ResultID,
+		BatchID:  result.BatchID,
+		//		ConversationID: result.ConversationID,
+		MapJSON:   result.MapJSON,
+		Label:     result.Label,
+		LabeledAt: result.LabeledAt,
+		CreatedAt: result.CreatedAt,
 	}
 }
 

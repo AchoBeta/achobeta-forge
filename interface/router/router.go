@@ -57,7 +57,7 @@ func register() (router *gin.Engine) {
 	// mindmap路由组需要JWT鉴权
 	mindMapGroup := r.Group("mindmap", jwtAuthMiddleware)
 	loadMindMapService(mindMapGroup)
-	loadGenerationService(mindMapGroup) // 添加生成相关路由
+	loadGenerationService(mindMapGroup)
 
 	// cos路由组需要JWT鉴权
 	cosGroup := r.Group("cos", jwtAuthMiddleware)
@@ -148,6 +148,36 @@ func loadMindMapService(r *gin.RouterGroup) {
 	// 批量删除思维导图
 	// [POST] /api/biz/v1/mindmap/batch_delete
 	r.Handle(POST, "batch_delete", BatchDeleteMindMap())
+}
+
+func loadGenerationService(r *gin.RouterGroup) {
+	// 批量生成导图
+	// [POST] /api/biz/v1/mindmap/generation/pro
+	r.Handle(POST, "generation/pro", GenerateMindMapPro())
+
+	// 获取批次详情
+	// [GET] /api/biz/v1/mindmap/generation/batch?batch_id=xxx
+	r.Handle(GET, "generation/batch", GetGenerationBatch())
+
+	// 标记结果
+	// [POST] /api/biz/v1/mindmap/generation/result/:result_id/label
+	r.Handle(POST, "generation/result/:result_id/label", LabelGenerationResult())
+
+	// 获取用户批次列表
+	// [GET] /api/biz/v1/mindmap/generation/batches
+	r.Handle(GET, "generation/batches", ListUserGenerationBatches())
+
+	// 导出SFT数据到文件
+	// [GET] /api/biz/v1/mindmap/generation/export-sft-file
+	r.Handle(GET, "generation/export-sft-file", ExportSFTDataToFile())
+
+	// 导出Session格式SFT数据
+	// [GET] /api/biz/v1/mindmap/generation/export-sft-session-file
+	r.Handle(GET, "generation/export-sft-session-file", ExportSFTSessionDataToFile())
+
+	// 导出DPO数据
+	// [GET] /api/biz/v1/mindmap/generation/export-dpo
+	r.Handle(GET, "generation/export-dpo", ExportDPOData())
 }
 
 func loadCOSService(r *gin.RouterGroup) {
