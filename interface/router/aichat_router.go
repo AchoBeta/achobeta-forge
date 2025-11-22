@@ -6,6 +6,7 @@ import (
 	"forge/biz/aichatservice"
 	"forge/interface/def"
 	"forge/interface/handler"
+	"forge/interface/outputPort"
 	"forge/pkg/log/zlog"
 	"forge/pkg/response"
 	"net/http"
@@ -80,6 +81,36 @@ func SendMessage() gin.HandlerFunc {
 		} else {
 			r.Success(resp)
 		}
+	}
+}
+
+// 流式对话输出
+func SendMessageStream() gin.HandlerFunc {
+	return func(gCtx *gin.Context) {
+		var req def.ProcessUserMessageRequest
+		ctx := gCtx.Request.Context()
+
+		if err := gCtx.ShouldBindJSON(&req); err != nil {
+			gCtx.JSON(http.StatusOK, response.JsonMsgResult{
+				Code:    response.PARAM_NOT_COMPLETE.Code,
+				Message: response.PARAM_NOT_COMPLETE.Msg,
+				Data:    def.ProcessUserMessageResponse{Success: false},
+			})
+			return
+		}
+
+		// 设置SSE响应头
+		gCtx.Header("Content-Type", "text/event-stream; charset=utf-8")
+		gCtx.Header("Cache-Control", "no-cache, no-store, must-revalidate") // 禁用所有缓存
+		gCtx.Header("Connection", "keep-alive")
+		gCtx.Header("X-Accel-Buffering", "no")           // Nginx禁用缓冲
+		gCtx.Header("X-Content-Type-Options", "nosniff") // 避免浏览器解析干扰
+		gCtx.Header("Transfer-Encoding", "chunked")      // 显式启用分块传输（部分环境需要）
+
+		writer := &outputPort.GinSSEWriter{Ctx: gCtx}
+
+		handler.GetHandler().SendMessageStream(ctx, &req, writer)
+
 	}
 }
 

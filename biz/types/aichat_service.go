@@ -12,6 +12,13 @@ type IAiChatService interface {
 	//处理用户消息
 	ProcessUserMessage(ctx context.Context, req *ProcessUserMessageParams) (AgentResponse, error)
 
+	//流式处理用户消息
+	ProcessUserMessageStream(
+		ctx context.Context,
+		req *ProcessUserMessageParams,
+		onChunk func(chunk StreamChunk) error,
+	) (err error)
+
 	//保存新的会话
 	SaveNewConversation(ctx context.Context, req *SaveNewConversationParams) (string, error)
 
