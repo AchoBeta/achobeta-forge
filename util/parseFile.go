@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/unidoc/unioffice/v2/document"
 	"github.com/unidoc/unioffice/v2/presentation"
@@ -24,8 +25,201 @@ const (
 	mimeTypeDocx = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 	mimeTypePPT  = "application/vnd.ms-powerpoint"
 	mimeTypePPTx = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-	mimeTypeZip  = "application/zip" // .docx, .pptx 实际上是ZIP格式
+	mimeTypeZip  = "application/zip"
 )
+
+// 文件解析器接口
+type FileParser interface {
+	// Supports 检查是否支持解析该文件类型
+	Supports(mimeType, ext string) bool
+	// Parse 解析文件内容
+	Parse(fh *multipart.FileHeader) (string, error)
+	// Name 返回解析器名称
+	Name() string
+}
+
+// 解析器注册表
+type ParserRegistry struct {
+	parsers []FileParser
+	mu      sync.RWMutex
+}
+
+var (
+	globalRegistry = &ParserRegistry{}
+	once           sync.Once
+)
+
+// 初始化并注册所有解析器
+func initRegistry() {
+	globalRegistry.Register(&PDFParser{})
+	globalRegistry.Register(&WordParser{})
+	globalRegistry.Register(&PPTParser{})
+}
+
+// GetRegistry 获取全局解析器注册表
+func GetRegistry() *ParserRegistry {
+	once.Do(initRegistry)
+	return globalRegistry
+}
+
+// Register 注册文件解析器
+func (r *ParserRegistry) Register(parser FileParser) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.parsers = append(r.parsers, parser)
+}
+
+// GetParser 根据MIME类型和扩展名获取合适的解析器
+func (r *ParserRegistry) GetParser(mimeType, ext string) FileParser {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	for _, parser := range r.parsers {
+		if parser.Supports(mimeType, ext) {
+			return parser
+		}
+	}
+	return nil
+}
+
+// PDF解析器
+type PDFParser struct{}
+
+func (p *PDFParser) Supports(mimeType, ext string) bool {
+	return mimeType == mimeTypePDF || ext == ".pdf"
+}
+
+func (p *PDFParser) Parse(fh *multipart.FileHeader) (string, error) {
+	f, err := fh.Open()
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	pdfReader, err := model.NewPdfReader(f)
+	if err != nil {
+		return "", err
+	}
+
+	if pdfReader == nil {
+		return "", fmt.Errorf("暂不支持解析该文件")
+	}
+
+	numPages, err := pdfReader.GetNumPages()
+	if err != nil {
+		return "", err
+	}
+
+	var textBuilder strings.Builder
+
+	for i := 0; i < numPages; i++ {
+		pageNum := i + 1
+
+		page, err := pdfReader.GetPage(pageNum)
+		if err != nil {
+			return "", err
+		}
+
+		ex, err := extractor.New(page)
+		if err != nil {
+			return "", err
+		}
+
+		text, err := ex.ExtractText()
+		if err != nil {
+			return "", err
+		}
+
+		textBuilder.WriteString(text)
+		textBuilder.WriteString("\n")
+	}
+
+	return textBuilder.String(), nil
+}
+
+func (p *PDFParser) Name() string {
+	return "PDFParser"
+}
+
+// Word文档解析器（支持.doc和.docx）
+type WordParser struct{}
+
+func (p *WordParser) Supports(mimeType, ext string) bool {
+	return mimeType == mimeTypeDoc || mimeType == mimeTypeDocx ||
+		mimeType == mimeTypeZip && ext == ".docx" ||
+		ext == ".doc" || ext == ".docx"
+}
+
+func (p *WordParser) Parse(fh *multipart.FileHeader) (string, error) {
+	f, err := fh.Open()
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	doc, err := document.Read(f, fh.Size)
+	if err != nil {
+
+		return "", fmt.Errorf("文档读取失败（可能格式不支持或文件损坏）：%w", err)
+	}
+	if doc == nil {
+		return "", fmt.Errorf("文档为空，暂不支持解析")
+	}
+
+	var allText strings.Builder
+	extracted := doc.ExtractText()
+
+	if extracted == nil {
+		return "", fmt.Errorf("暂不支持解析该文件")
+	}
+	for _, e := range extracted.Items {
+		allText.WriteString(e.Text)
+	}
+	return allText.String(), nil
+}
+
+func (p *WordParser) Name() string {
+	return "WordParser"
+}
+
+// PPT解析器（支持.ppt和.pptx）
+type PPTParser struct{}
+
+func (p *PPTParser) Supports(mimeType, ext string) bool {
+	return mimeType == mimeTypePPT || mimeType == mimeTypePPTx ||
+		mimeType == mimeTypeZip && ext == ".pptx" ||
+		ext == ".ppt" || ext == ".pptx"
+}
+
+func (p *PPTParser) Parse(fh *multipart.FileHeader) (string, error) {
+	f, err := fh.Open()
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	ppt, err := presentation.Read(f, fh.Size)
+	if err != nil {
+		return "", err
+	}
+	if ppt == nil {
+		return "", fmt.Errorf("暂不支持解析该文件")
+	}
+
+	pt := ppt.ExtractText()
+	var allText strings.Builder
+	for _, slide := range pt.Slides {
+		for _, item := range slide.Items {
+			allText.WriteString(item.Text)
+			allText.WriteString("\n")
+		}
+	}
+	return allText.String(), nil
+}
+
+func (p *PPTParser) Name() string {
+	return "PPTParser"
+}
 
 // 支持的文件扩展名
 var supportedExtensions = map[string]bool{
@@ -42,74 +236,29 @@ func ParseFile(ctx context.Context, fh *multipart.FileHeader) (text string, err 
 	if !supportedExtensions[ext] {
 		return "", fmt.Errorf("unsupported file extension: %s", ext)
 	}
+
 	mime, err := fileHeaderMime(fh)
 	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) {
 		zlog.CtxErrorf(ctx, "failed to detect MIME type for file %s: %v", fh.Filename, err)
 		return "", err
 	}
 
-	// 根据MIME类型和文件扩展名确定文件类型
-	fileType, err := determineFileType(mime, ext)
-	if err != nil {
-		zlog.CtxErrorf(ctx, "failed to determine file type for %s: %v", fh.Filename, err)
-		return "", err
+	// 使用注册表获取合适的解析器
+	parser := GetRegistry().GetParser(mime, ext)
+	if parser == nil {
+		zlog.CtxErrorf(ctx, "no parser found for file %s: MIME=%s, ext=%s", fh.Filename, mime, ext)
+		return "", fmt.Errorf("unsupported file type: MIME=%s, ext=%s", mime, ext)
 	}
 
-	switch fileType {
-	case mimeTypePDF:
-		text, err = extractPDF(fh)
-	case mimeTypeDoc, mimeTypeDocx:
-		text, err = extractWord(fh)
-	case mimeTypePPT, mimeTypePPTx:
-		text, err = extractPPT(fh)
-	default:
-		err = fmt.Errorf("unsupported file type: %s", fileType)
-	}
+	zlog.CtxInfof(ctx, "using parser %s for file %s", parser.Name(), fh.Filename)
+	text, err = parser.Parse(fh)
 
 	if err != nil {
-		zlog.CtxErrorf(ctx, "failed to extract content from %s: %v", fh.Filename, err)
+		zlog.CtxErrorf(ctx, "failed to extract content from %s using %s: %v", fh.Filename, parser.Name(), err)
 		return "", err
 	}
 
 	return text, nil
-}
-
-// 根据MIME类型和文件扩展名确定最终的文件类型
-func determineFileType(mime, ext string) (string, error) {
-	switch mime {
-	case mimeTypePDF:
-		return mimeTypePDF, nil
-	case mimeTypeDoc, mimeTypeDocx:
-		return mime, nil
-	case mimeTypePPT, mimeTypePPTx:
-		return mime, nil
-	case mimeTypeZip:
-		// .docx 和 .pptx 实际上是ZIP格式，需要根据扩展名进一步判断
-		switch ext {
-		case ".docx":
-			return mimeTypeDocx, nil
-		case ".pptx":
-			return mimeTypePPTx, nil
-		default:
-			return "", fmt.Errorf("unsupported ZIP-based file format: %s", ext)
-		}
-	default:
-		// 如果MIME类型检测失败，回退到扩展名判断
-		switch ext {
-		case ".pdf":
-			return mimeTypePDF, nil
-		case ".doc":
-			return mimeTypeDoc, nil
-		case ".docx":
-			return mimeTypeDocx, nil
-		case ".ppt":
-			return mimeTypePPT, nil
-		case ".pptx":
-			return mimeTypePPTx, nil
-		default:
-			return "", fmt.Errorf("unable to determine file type: MIME=%s, ext=%s", mime, ext)
-		}
-	}
 }
 
 // 返回检测到的MIME类型
@@ -132,91 +281,4 @@ func fileHeaderMime(fh *multipart.FileHeader) (string, error) {
 	}
 
 	return http.DetectContentType(buf[:n]), nil
-}
-
-func extractPDF(fh *multipart.FileHeader) (string, error) {
-	f, err := fh.Open()
-	if err != nil {
-		return "", err
-	}
-
-	defer f.Close()
-
-	pdfReader, err := model.NewPdfReader(f)
-	if err != nil {
-		return "", err
-	}
-
-	numPages, err := pdfReader.GetNumPages()
-	if err != nil {
-		return "", err
-	}
-
-	var textBuilder strings.Builder
-
-	for i := 0; i < numPages; i++ {
-		pageNum := i + 1
-
-		page, err := pdfReader.GetPage(pageNum) //文本操作对象
-		if err != nil {
-			return "", err
-		}
-
-		ex, err := extractor.New(page)
-		if err != nil {
-			return "", err
-		}
-
-		text, err := ex.ExtractText() //文本
-		if err != nil {
-			return "", err
-		}
-		//拼接
-		textBuilder.WriteString(text)
-		textBuilder.WriteString("\n")
-	}
-
-	return textBuilder.String(), nil
-}
-
-func extractWord(fh *multipart.FileHeader) (string, error) {
-	f, err := fh.Open()
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-
-	doc, err := document.Read(f, fh.Size) //word文件对象
-	if err != nil {
-		return "", err
-	}
-
-	var allText strings.Builder
-
-	extracted := doc.ExtractText()
-	for _, e := range extracted.Items {
-		allText.WriteString(e.Text)
-	}
-	return allText.String(), nil
-}
-
-func extractPPT(fh *multipart.FileHeader) (string, error) {
-	f, err := fh.Open()
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	ppt, err := presentation.Read(f, fh.Size)
-	if err != nil {
-		return "", err
-	}
-	pt := ppt.ExtractText()
-	var allText strings.Builder
-	for _, slide := range pt.Slides { //每个  slide  代表一张幻灯片
-		for _, item := range slide.Items { //当前这页ppt中的文本项的列表
-			allText.WriteString(item.Text)
-			allText.WriteString("\n")
-		}
-	}
-	return allText.String(), nil
 }
