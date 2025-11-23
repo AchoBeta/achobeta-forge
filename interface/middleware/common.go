@@ -3,15 +3,13 @@ package middleware
 import (
 	"bytes"
 	"fmt"
-	"forge/constant"
-	"forge/pkg/log/zlog"
 	"forge/pkg/loop"
+	"forge/pkg/trace"
 	"io"
+	"time"
 
 	cozeloop "github.com/coze-dev/cozeloop-go"
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
-	"go.uber.org/zap"
 )
 
 // responseBodyWriter 用于捕获响应体
@@ -31,19 +29,12 @@ func (r responseBodyWriter) Write(b []byte) (int, error) {
 //	@return app.HandlerFunc
 func AddTracer() gin.HandlerFunc {
 	return func(gCtx *gin.Context) {
-		// Trace ID 存在于 HTTP Header "X-Request-ID" 中 nginx会注入，如果不注入自己注入一个
-		logID := gCtx.Request.Header.Get("X-Request-ID")
-		if logID == "" {
-			logID = uuid.New().String()
-			gCtx.Request.Header.Set("X-Request-ID", logID)
-		}
+		// 1. 记录请求开始时间
+		requestTime := time.Now()
 
-		// 设置 logid 到 Gin context
-		gCtx.Set(constant.LOGID, logID)
-
-		// 同时设置到 request context（为了兼容日志系统）
+		// 2. 设置请求时间到 Request Context
 		ctx := gCtx.Request.Context()
-		ctx = zlog.WithLogKey(ctx, zap.String(constant.LOGID, logID))
+		ctx = trace.SetRequestTime(ctx, requestTime)
 
 		// 读取请求体
 		var requestBody string
@@ -66,6 +57,8 @@ func AddTracer() gin.HandlerFunc {
 
 		// 集成 CozeLoop 链路追踪 - 创建 Root Span
 		var span cozeloop.Span
+		var traceID string
+
 		if loop.IsEnabled() {
 			// 构建 span 名称：HTTP方法 + 路径
 			spanName := gCtx.Request.Method + " " + gCtx.FullPath()
@@ -76,12 +69,14 @@ func AddTracer() gin.HandlerFunc {
 			// 创建 Root Span
 			ctx, span = loop.StartRootSpan(ctx, spanName)
 
-			// 记录完整的请求信息
+			// 从 CozeLoop span 获取 trace_id
 			if span != nil {
-				// 设置请求输入
+				traceID = span.GetTraceID()
+
+				// 记录完整的请求信息
 				span.SetInput(ctx, requestBody)
 
-				// 设置标签和元数据
+				// 设置标签和元数据（只设置 HTTP 相关的）
 				tags := map[string]interface{}{
 					"http.method":       gCtx.Request.Method,
 					"http.path":         gCtx.Request.URL.Path,
@@ -89,11 +84,16 @@ func AddTracer() gin.HandlerFunc {
 					"http.user_agent":   gCtx.Request.UserAgent(),
 					"http.remote_addr":  gCtx.ClientIP(),
 					"http.content_type": gCtx.Request.Header.Get("Content-Type"),
-					"request_id":        logID,
 				}
 				span.SetTags(ctx, tags)
 			}
 		}
+
+		// 如果 trace_id 为空，生成 fallback trace_id
+		if traceID == "" {
+			traceID = trace.GenerateTraceID()
+		}
+		ctx = trace.SetTraceID(ctx, traceID)
 
 		gCtx.Request = gCtx.Request.WithContext(ctx)
 

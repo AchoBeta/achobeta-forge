@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"forge/biz/aichatservice"
@@ -242,7 +243,76 @@ func (a *aiChatPersistence) GetQualityConversations(ctx context.Context, startDa
 		return nil, fmt.Errorf("获取质量对话时数据库出错: %w", err)
 	}
 
-	return CastConversationPOs2DOs(conversationPOs)
+	conversations, err := CastConversationPOs2DOs(conversationPOs)
+	if err != nil {
+		return nil, err
+	}
+
+	// 填充MapData：根据MapID和UserID查询MindMap数据
+	if err := a.fillMapDataForConversations(ctx, conversations); err != nil {
+		return nil, fmt.Errorf("填充导图数据失败: %w", err)
+	}
+
+	return conversations, nil
+}
+
+// fillMapDataForConversations 为对话列表填充导图数据
+func (a *aiChatPersistence) fillMapDataForConversations(ctx context.Context, conversations []*entity.Conversation) error {
+	if len(conversations) == 0 {
+		return nil
+	}
+
+	// 收集所有唯一的 MapID 和 UserID 组合
+	type mapKey struct {
+		MapID  string
+		UserID string
+	}
+	mapKeys := make(map[mapKey]bool)
+	for _, conv := range conversations {
+		if conv.MapID != "" && conv.UserID != "" {
+			mapKeys[mapKey{MapID: conv.MapID, UserID: conv.UserID}] = true
+		}
+	}
+
+	// 批量查询MindMap数据
+	mindMapPersistence := GetMindMapPersistence()
+	mapDataCache := make(map[mapKey]string) // 缓存MapID对应的JSON数据
+
+	for key := range mapKeys {
+		query := repo.NewMindMapQueryByID(key.UserID, key.MapID)
+		mindMap, err := mindMapPersistence.GetMindMap(ctx, query)
+		if err != nil {
+			// 如果查询失败，记录警告但继续处理其他数据
+			continue
+		}
+		if mindMap == nil {
+			// MindMap不存在，使用空JSON
+			mapDataCache[key] = "{}"
+			continue
+		}
+
+		// 将MindMap的Data序列化为JSON字符串
+		dataBytes, err := json.Marshal(mindMap.Data)
+		if err != nil {
+			// 序列化失败，使用空JSON
+			mapDataCache[key] = "{}"
+			continue
+		}
+		mapDataCache[key] = string(dataBytes)
+	}
+
+	// 填充每个Conversation的MapData
+	for _, conv := range conversations {
+		key := mapKey{MapID: conv.MapID, UserID: conv.UserID}
+		if mapData, ok := mapDataCache[key]; ok {
+			conv.MapData = mapData
+		} else {
+			// 如果没有找到对应的MindMap，使用空JSON
+			conv.MapData = "{}"
+		}
+	}
+
+	return nil
 }
 
 // UpdateMessageQuality 更新特定消息的质量评分 - 使用原子操作
@@ -267,7 +337,9 @@ func (a *aiChatPersistence) UpdateMessageQuality(ctx context.Context, conversati
 	}
 
 	// 3. 使用数据库原子的JSON_SET函数更新，避免竞态条件
-	jsonPath := fmt.Sprintf("$[%d].QualityScore", messageIndex)
+	// TODO: 不优雅，后面改
+	// 注意：字段名必须与Message结构体的JSON标签一致（quality_score）
+	jsonPath := fmt.Sprintf("$[%d].quality_score", messageIndex)
 	result := a.db.WithContext(ctx).Model(&po.ConversationPO{}).
 		Where("conversation_id = ?", conversationID).
 		Update("messages", gorm.Expr("JSON_SET(messages, ?, ?)", jsonPath, qualityScore))

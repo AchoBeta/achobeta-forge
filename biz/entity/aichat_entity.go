@@ -160,12 +160,12 @@ type QualityAssessmentTask struct {
 
 // JSONL导出相关实体
 type JSONLMessage struct {
-	Role    string
-	Content string
+	Role    string `json:"role"`
+	Content string `json:"content"`
 }
 
 type JSONLRecord struct {
-	Messages []JSONLMessage
+	Messages []JSONLMessage `json:"messages"`
 }
 
 // 质量数据导出请求

@@ -21,7 +21,7 @@ type IConfig interface {
 	GetAiChatConfig() AiChatConfig
 	GetSMSConfig() SMSConfig
 	GetUniOfficeConfig() UniOfficeConfig
-	GetOAuthConfig() OAuthConfig // OAuth 第三方登录配置
+	GetOAuthConfig() OAuthConfig       // OAuth 第三方登录配置
 	GetCozeLoopConfig() CozeLoopConfig // CozeLoop 可观测性配置
 }
 
@@ -239,8 +239,8 @@ type OAuthConfig struct {
 
 // CozeLoopConfig CozeLoop 可观测性配置
 type CozeLoopConfig struct {
-	WorkspaceID  string `mapstructure:"workspace_id"`
-	APIToken     string `mapstructure:"api_token"`
-	Enable       bool   `mapstructure:"enable"`
-	PromptTrace  bool   `mapstructure:"prompt_trace"`
+	WorkspaceID string `mapstructure:"workspace_id"`
+	APIToken    string `mapstructure:"api_token"`
+	Enable      bool   `mapstructure:"enable"`
+	PromptTrace bool   `mapstructure:"prompt_trace"`
 }
