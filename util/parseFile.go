@@ -165,8 +165,6 @@ func (p *WordParser) Parse(fh *multipart.FileHeader) (string, error) {
 		return "", fmt.Errorf("文档为空，暂不支持解析")
 	}
 
-	fmt.Printf("类型：%T，值：%v\n", doc.Numbering, doc.Numbering)
-
 	var allText strings.Builder
 	extracted := doc.ExtractText()
 
