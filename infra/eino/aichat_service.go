@@ -74,7 +74,7 @@ func NewAiChatClient(apiKey, modelName string) repo.EinoServer {
 	toolModel, err := ark.NewChatModel(ctx, &ark.ChatModelConfig{
 		APIKey:   apiKey,
 		Model:    modelName,
-		Thinking: &model.Thinking{Type: model.ThinkingTypeDisabled},
+		Thinking: &model.Thinking{Type: model.ThinkingTypeEnabled},
 		ResponseFormat: &ark.ResponseFormat{Type: model.ResponseFormatJSONSchema, JSONSchema: &model.ResponseFormatJSONSchemaJSONSchemaParam{
 			Name:        "mindmap_editor",
 			Description: "思维导图编辑机器人输出，输出单行json，不允许有任何换行",
@@ -116,7 +116,7 @@ func NewAiChatClient(apiKey, modelName string) repo.EinoServer {
 	aiChatModel, err := ark.NewChatModel(ctx, &ark.ChatModelConfig{
 		APIKey:   apiKey,
 		Model:    modelName,
-		Thinking: &model.Thinking{Type: model.ThinkingTypeDisabled},
+		Thinking: &model.Thinking{Type: model.ThinkingTypeEnabled},
 	})
 	if aiChatModel == nil || err != nil {
 		zlog.Errorf("ai模型连接失败: %v", err)
