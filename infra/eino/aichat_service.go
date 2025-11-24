@@ -183,7 +183,11 @@ func NewAiChatClient(apiKey, modelName string) repo.EinoServer {
 	chatModelPostHandler := func(ctx context.Context, input *schema.Message, state *State) (output *schema.Message, err error) {
 		//fmt.Println("工具使用测试:", input)
 		state.ToolCalls = input.ToolCalls
-		state.Content = input.Content
+		if len(input.ToolCalls) == 0 {
+			state.Content = input.Content
+		} else {
+			state.Content = input.ReasoningContent
+		}
 		return input, nil
 	}
 
