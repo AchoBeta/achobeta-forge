@@ -72,6 +72,7 @@ func (c *Conversation) AddMessage(content, role, ToolCallID string, ToolCalls []
 
 	c.Messages = append(c.Messages, message)
 	c.UpdatedAt = now
+
 	return message
 }
 

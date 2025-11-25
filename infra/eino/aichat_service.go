@@ -60,7 +60,7 @@ func NewAiChatClient(apiKey, modelName string) repo.EinoServer {
 	toolModel, err := ark.NewChatModel(ctx, &ark.ChatModelConfig{
 		APIKey:   apiKey,
 		Model:    modelName,
-		Thinking: &model.Thinking{Type: model.ThinkingTypeDisabled},
+		Thinking: &model.Thinking{Type: model.ThinkingTypeEnabled},
 		ResponseFormat: &ark.ResponseFormat{Type: model.ResponseFormatJSONSchema, JSONSchema: &model.ResponseFormatJSONSchemaJSONSchemaParam{
 			Name:        "mindmap_editor",
 			Description: "思维导图编辑机器人输出，输出单行json，不允许有任何换行",
@@ -102,7 +102,7 @@ func NewAiChatClient(apiKey, modelName string) repo.EinoServer {
 	aiChatModel, err := ark.NewChatModel(ctx, &ark.ChatModelConfig{
 		APIKey:   apiKey,
 		Model:    modelName,
-		Thinking: &model.Thinking{Type: model.ThinkingTypeDisabled},
+		Thinking: &model.Thinking{Type: model.ThinkingTypeEnabled},
 	})
 	if aiChatModel == nil || err != nil {
 		zlog.Errorf("ai模型连接失败: %v", err)
@@ -158,7 +158,9 @@ func NewAiChatClient(apiKey, modelName string) repo.EinoServer {
 
 		}
 		_ = compose.ProcessState[*State](ctx, func(ctx context.Context, state *State) error {
+			//if input[len(input)-1].Role == schema.Tool {
 			output.Content = state.Content
+
 			output.ToolCalls = state.ToolCalls
 			return nil
 		})
@@ -167,9 +169,15 @@ func NewAiChatClient(apiKey, modelName string) repo.EinoServer {
 
 	//chatModel执行完之后把 输出存一下
 	chatModelPostHandler := func(ctx context.Context, input *schema.Message, state *State) (output *schema.Message, err error) {
-		//fmt.Println("工具使用测试:", input)
+		fmt.Printf("工具使用测试: %+v\n", input)
+		fmt.Println("模型输出:", input.Content)
+		fmt.Println("模型思考过程", input.ReasoningContent)
 		state.ToolCalls = input.ToolCalls
-		state.Content = input.Content
+		if len(input.ToolCalls) == 0 {
+			state.Content = input.Content
+		} else {
+			state.Content = input.ReasoningContent
+		}
 		return input, nil
 	}
 

@@ -12,6 +12,7 @@ type ConversationPO struct {
 	UserID         string         `gorm:"column:user_id;not null"`
 	MapID          string         `gorm:"column:map_id;not null"`
 	Title          string         `gorm:"column:title;not null"`
+	Text           string         `gorm:"column:text"`
 	Messages       datatypes.JSON `gorm:"column:messages;type:json"`
 	CreatedAt      time.Time      `gorm:"column:created_at"`
 	UpdatedAt      time.Time      `gorm:"column:updated_at"`
