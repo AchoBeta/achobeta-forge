@@ -206,9 +206,9 @@ func NewAiChatClient(apiKey, modelName string) repo.EinoServer {
 
 	//chatModel执行完之后把 输出存一下
 	chatModelPostHandler := func(ctx context.Context, input *schema.Message, state *State) (output *schema.Message, err error) {
-		fmt.Printf("工具使用测试: %+v\n", input)
-		fmt.Println("模型输出:", input.Content)
-		fmt.Println("模型思考过程", input.ReasoningContent)
+		//fmt.Printf("工具使用测试: %+v\n", input)
+		//fmt.Println("模型输出:", input.Content)
+		//fmt.Println("模型思考过程", input.ReasoningContent)
 		state.ToolCalls = input.ToolCalls
 
 		//state.Content = input.Content
