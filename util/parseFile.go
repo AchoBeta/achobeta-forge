@@ -255,6 +255,7 @@ var supportedExtensions = map[string]bool{
 	".docx": true,
 	".ppt":  true,
 	".pptx": true,
+	".txt":  true,
 }
 
 func ParseFile(ctx context.Context, fh *multipart.FileHeader) (text string, err error) {

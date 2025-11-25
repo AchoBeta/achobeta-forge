@@ -7,11 +7,11 @@ import (
 	"forge/infra/configs"
 	"forge/pkg/log/zlog"
 	"forge/pkg/response"
-	"net/http"
-	"time"
-
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
+	"github.com/google/uuid"
+	"net/http"
+	"time"
 )
 
 // RateLimiterConfig 限流配置
@@ -25,7 +25,7 @@ type RateLimiterConfig struct {
 func RateLimiter() gin.HandlerFunc {
 	// 从配置中读取限流参数
 	rateLimitConfig := configs.Config().GetRateLimitConfig()
-	
+
 	if !rateLimitConfig.Enable {
 		zlog.Infof("限流功能未启用")
 		return func(c *gin.Context) {
@@ -44,7 +44,7 @@ func RateLimiter() gin.HandlerFunc {
 	}
 
 	window := time.Duration(windowSeconds) * time.Second
-	
+
 	zlog.Infof("限流中间件已启用: %d 请求/%d 秒", limit, windowSeconds)
 
 	return func(c *gin.Context) {
@@ -56,10 +56,10 @@ func RateLimiter() gin.HandlerFunc {
 		}
 
 		ctx := c.Request.Context()
-		
+
 		// 使用全局限流 key
 		key := "rate_limit:global"
-		
+
 		// 执行限流检查
 		allowed, err := checkRateLimit(ctx, redisClient, key, limit, window)
 		if err != nil {
@@ -84,7 +84,7 @@ func RateLimiter() gin.HandlerFunc {
 // RateLimiterByIP 基于 IP 的限流中间件
 func RateLimiterByIP() gin.HandlerFunc {
 	rateLimitConfig := configs.Config().GetRateLimitConfig()
-	
+
 	if !rateLimitConfig.Enable {
 		return func(c *gin.Context) {
 			c.Next()
@@ -99,6 +99,7 @@ func RateLimiterByIP() gin.HandlerFunc {
 		redisClient := cache.GetRedisClient()
 		if redisClient == nil {
 			c.Next()
+			zlog.Warnf("Redis 客户端未初始化，跳过 IP 限流")
 			return
 		}
 
@@ -142,7 +143,7 @@ func checkRateLimit(ctx context.Context, client *redis.Client, key string, limit
 	// 3. 添加当前请求到窗口
 	pipe.ZAdd(ctx, key, &redis.Z{
 		Score:  float64(now),
-		Member: fmt.Sprintf("%d", now),
+		Member: fmt.Sprintf("%d-%s", now, uuid.NewString()),
 	})
 
 	// 4. 设置 key 过期时间（窗口时间的 2 倍，确保数据能被清理）
@@ -169,4 +170,3 @@ func checkRateLimit(ctx context.Context, client *redis.Client, key string, limit
 	// 如果当前窗口内的请求数（不包括本次）小于限制，则允许请求
 	return count < int64(limit), nil
 }
-
