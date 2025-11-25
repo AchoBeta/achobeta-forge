@@ -36,13 +36,20 @@ type AiChatClient struct {
 }
 
 type State struct {
-	Content   string
-	ToolCalls []schema.ToolCall
+	Content    string
+	ToolCalls  []schema.ToolCall
+	Message    []*schema.Message
+	MapJson    string
+	ToolCallID string
 }
 
 func initState(ctx context.Context) *State {
 	return &State{
-		Content: "",
+		Content:    "",
+		ToolCalls:  make([]schema.ToolCall, 0),
+		Message:    make([]*schema.Message, 0),
+		MapJson:    "",
+		ToolCallID: "",
 	}
 }
 
@@ -122,6 +129,18 @@ func NewAiChatClient(apiKey, modelName string) repo.EinoServer {
 		zlog.Errorf("ai模型连接失败: %v", err)
 		panic(fmt.Errorf("ai模型连接失败: %v", err))
 	}
+
+	sumUpClient, err := ark.NewChatModel(ctx, &ark.ChatModelConfig{
+		APIKey:   apiKey,
+		Model:    modelName,
+		Thinking: &model.Thinking{Type: model.ThinkingTypeDisabled},
+	})
+
+	if sumUpClient == nil || err != nil {
+		zlog.Errorf("sumUp模型连接失败: %v", err)
+		panic(fmt.Errorf("sumUp 模型连接失败: %v", err))
+	}
+
 	updateMindMapTool := aiChatClient.CreateUpdateMindMapTool()
 	infoTool, err := updateMindMapTool.Info(ctx)
 	if err != nil {
@@ -150,36 +169,40 @@ func NewAiChatClient(apiKey, modelName string) repo.EinoServer {
 	}
 
 	//分支中的lambda 用于对其前后输入输出
-	lambda1 := compose.InvokableLambda(func(ctx context.Context, input *schema.Message) (output []*schema.Message, err error) {
-		output = make([]*schema.Message, 0)
-		output = append(output, input)
-		return output, nil
+	lambda1 := compose.InvokableLambda(func(ctx context.Context, input *schema.Message) (output *schema.Message, err error) {
+
+		return input, nil
 	})
 
 	//分支结束统一进入的lambda 用于处理输出的数据
-	lambda2 := compose.InvokableLambda(func(ctx context.Context, input []*schema.Message) (output types.AgentResponse, err error) {
+	lambda2 := compose.InvokableLambda(func(ctx context.Context, input *schema.Message) (output types.AgentResponse, err error) {
 		//fmt.Println("lambda测试：", input)
 
-		if len(input) == 0 {
+		if input == nil {
 			return types.AgentResponse{}, errors.New("agent出错")
 		}
 
 		output = types.AgentResponse{}
 
-		if input[len(input)-1].Role == schema.Tool {
-			output.NewMapJson = input[len(input)-1].Content
-			output.ToolCallID = input[len(input)-1].ToolCallID
+		//if input[len(input)-1].Role == schema.Tool {
+		//	output.NewMapJson = input[len(input)-1].Content
+		//	output.ToolCallID = input[len(input)-1].ToolCallID
+		//}
+		output.Content = input.Content
 
-		}
 		_ = compose.ProcessState[*State](ctx, func(ctx context.Context, state *State) error {
 			//if input[len(input)-1].Role == schema.Tool {
-			output.Content = state.Content
-
+			output.ToolCallID = state.ToolCallID
 			output.ToolCalls = state.ToolCalls
+			output.NewMapJson = state.MapJson
 			return nil
 		})
 		return output, nil
 	})
+
+	//调用总结工具后进入lambda3
+	//lambda3 := compose.InvokableLambda(func(ctx context.Context, input types.AgentResponse) (output []*schema.Message, err error) {
+	//fmt.Println("lambda测试：", input)
 
 	//chatModel执行完之后把 输出存一下
 	chatModelPostHandler := func(ctx context.Context, input *schema.Message, state *State) (output *schema.Message, err error) {
@@ -187,12 +210,28 @@ func NewAiChatClient(apiKey, modelName string) repo.EinoServer {
 		fmt.Println("模型输出:", input.Content)
 		fmt.Println("模型思考过程", input.ReasoningContent)
 		state.ToolCalls = input.ToolCalls
-		if len(input.ToolCalls) == 0 {
-			state.Content = input.Content
-		} else {
-			state.Content = input.ReasoningContent
-		}
+
+		//state.Content = input.Content
+
+		state.Message = append(state.Message, input)
 		return input, nil
+	}
+
+	//tool执行完后 把输出保存
+	toolPostHandler := func(ctx context.Context, input []*schema.Message, state *State) (output []*schema.Message, err error) {
+		//输出添加到state中
+		if input[len(input)-1].Role == schema.Tool {
+			state.MapJson = input[len(input)-1].Content
+			state.ToolCallID = input[len(input)-1].ToolCallID
+		}
+		state.Message = append(state.Message, input[len(input)-1])
+
+		state.Message = append(state.Message, &schema.Message{
+			Role:    schema.User,
+			Content: "总结一下这段工具使用过程",
+		})
+
+		return state.Message, nil
 	}
 
 	g := compose.NewGraph[[]*schema.Message, types.AgentResponse](compose.WithGenLocalState(initState))
@@ -202,7 +241,12 @@ func NewAiChatClient(apiKey, modelName string) repo.EinoServer {
 		panic("添加节点失败," + err.Error())
 	}
 
-	err = g.AddToolsNode("tools", ToolsNode)
+	err = g.AddChatModelNode("sumUpModel", sumUpClient)
+	if err != nil {
+		panic("添加节点失败," + err.Error())
+	}
+
+	err = g.AddToolsNode("tools", ToolsNode, compose.WithStatePostHandler(toolPostHandler))
 	if err != nil {
 		panic("添加节点失败," + err.Error())
 	}
@@ -237,7 +281,12 @@ func NewAiChatClient(apiKey, modelName string) repo.EinoServer {
 		panic("创建分支失败" + err.Error())
 	}
 
-	err = g.AddEdge("tools", "lambda2")
+	err = g.AddEdge("tools", "sumUpModel")
+	if err != nil {
+		panic("创建边失败" + err.Error())
+	}
+
+	err = g.AddEdge("sumUpModel", "lambda2")
 	if err != nil {
 		panic("创建边失败" + err.Error())
 	}
