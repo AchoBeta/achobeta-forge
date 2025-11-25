@@ -40,6 +40,7 @@ func register() (router *gin.Engine) {
 	gin.SetMode(gin.DebugMode)
 	r := gin.Default()
 	r.Use(middleware.CorsMiddleware())
+	r.Use(middleware.RateLimiter()) // 添加全局限流中间件
 	r.RouterGroup = *r.Group("/api/biz/v1", middleware.AddTracer())
 
 	// 用户服务：不需要JWT的路由（登录、注册、发送验证码、重置密码）

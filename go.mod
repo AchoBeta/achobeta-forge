@@ -11,6 +11,7 @@ require (
 	github.com/cloudwego/eino-ext/callbacks/cozeloop v0.1.6
 	github.com/cloudwego/eino-ext/components/model/ark v0.1.41
 	github.com/coze-dev/cozeloop-go v0.1.15
+	github.com/coze-dev/cozeloop-go/spec v0.1.5
 	github.com/gin-contrib/cors v1.7.6
 	github.com/gin-gonic/gin v1.11.0
 	github.com/go-redis/redis/v8 v8.11.5
@@ -47,7 +48,6 @@ require (
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/clbanning/mxj v1.8.4 // indirect
 	github.com/cloudwego/base64x v0.1.6 // indirect
-	github.com/coze-dev/cozeloop-go/spec v0.1.5 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect

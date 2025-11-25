@@ -69,4 +69,7 @@ var (
 	CONVERSATION_NOT_EXIST      = MsgCode{Code: 5204, Msg: "该会话不存在"}
 	AI_CHAT_PERMISSION_DENIED   = MsgCode{Code: 5205, Msg: "会话权限不足"}
 	MIND_MAP_NOT_EXIST          = MsgCode{Code: 5206, Msg: "该导图不存在"}
+
+	/* 限流错误 */
+	TOO_MANY_REQUESTS = MsgCode{Code: 429, Msg: "请求过于频繁，请稍后再试"}
 )

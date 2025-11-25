@@ -21,8 +21,9 @@ type IConfig interface {
 	GetAiChatConfig() AiChatConfig
 	GetSMSConfig() SMSConfig
 	GetUniOfficeConfig() UniOfficeConfig
-	GetOAuthConfig() OAuthConfig       // OAuth 第三方登录配置
-	GetCozeLoopConfig() CozeLoopConfig // CozeLoop 可观测性配置
+	GetOAuthConfig() OAuthConfig           // OAuth 第三方登录配置
+	GetCozeLoopConfig() CozeLoopConfig     // CozeLoop 可观测性配置
+	GetRateLimitConfig() RateLimitConfig   // 限流配置
 }
 
 var (
@@ -85,6 +86,9 @@ func (c *config) GetOAuthConfig() OAuthConfig { return c.OAuthConfig }
 // cozeloop配置读取
 func (c *config) GetCozeLoopConfig() CozeLoopConfig { return c.CozeLoopConfig }
 
+// 限流配置读取
+func (c *config) GetRateLimitConfig() RateLimitConfig { return c.RateLimitConfig }
+
 func mustInit(path string) *config {
 	// 初始化时间为东八区的时间
 	var cstZone = time.FixedZone("CST", 8*3600) // 东八
@@ -140,6 +144,7 @@ type config struct {
 	UniOfficeConfig UniOfficeConfig   `mapstructure:"unioffice"`
 	OAuthConfig     OAuthConfig       `mapstructure:"oauth"`
 	CozeLoopConfig  CozeLoopConfig    `mapstructure:"cozeloop"`
+	RateLimitConfig RateLimitConfig   `mapstructure:"rate_limit"`
 }
 
 type ApplicationConfig struct {
@@ -243,4 +248,11 @@ type CozeLoopConfig struct {
 	APIToken    string `mapstructure:"api_token"`
 	Enable      bool   `mapstructure:"enable"`
 	PromptTrace bool   `mapstructure:"prompt_trace"`
+}
+
+// RateLimitConfig 限流配置
+type RateLimitConfig struct {
+	Enable        bool `mapstructure:"enable"`         // 是否启用限流
+	Limit         int  `mapstructure:"limit"`          // 时间窗口内允许的最大请求数
+	WindowSeconds int  `mapstructure:"window_seconds"` // 时间窗口（秒）
 }
