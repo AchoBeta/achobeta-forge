@@ -133,3 +133,7 @@ rate_limit:   # 限流配置
   limit: 1000                          # 时间窗口内允许的最大请求数
   window_seconds: 60                   # 时间窗口（秒），默认 60 秒
 
+search:       # 搜索服务配置
+  provider: "duckduckgo"               # 搜索服务提供商: duckduckgo(免费), serpapi(需要API Key)
+  api_key: ""                          # API密钥（如果使用需要密钥的服务如SerpAPI）
+

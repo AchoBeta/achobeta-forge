@@ -24,6 +24,7 @@ type IConfig interface {
 	GetOAuthConfig() OAuthConfig           // OAuth 第三方登录配置
 	GetCozeLoopConfig() CozeLoopConfig     // CozeLoop 可观测性配置
 	GetRateLimitConfig() RateLimitConfig   // 限流配置
+	GetSearchConfig() SearchConfig         // 搜索服务配置
 }
 
 var (
@@ -89,6 +90,9 @@ func (c *config) GetCozeLoopConfig() CozeLoopConfig { return c.CozeLoopConfig }
 // 限流配置读取
 func (c *config) GetRateLimitConfig() RateLimitConfig { return c.RateLimitConfig }
 
+// 搜索服务配置读取
+func (c *config) GetSearchConfig() SearchConfig { return c.SearchConfig }
+
 func mustInit(path string) *config {
 	// 初始化时间为东八区的时间
 	var cstZone = time.FixedZone("CST", 8*3600) // 东八
@@ -145,6 +149,7 @@ type config struct {
 	OAuthConfig     OAuthConfig       `mapstructure:"oauth"`
 	CozeLoopConfig  CozeLoopConfig    `mapstructure:"cozeloop"`
 	RateLimitConfig RateLimitConfig   `mapstructure:"rate_limit"`
+	SearchConfig    SearchConfig      `mapstructure:"search"`
 }
 
 type ApplicationConfig struct {
@@ -255,4 +260,10 @@ type RateLimitConfig struct {
 	Enable        bool `mapstructure:"enable"`         // 是否启用限流
 	Limit         int  `mapstructure:"limit"`          // 时间窗口内允许的最大请求数
 	WindowSeconds int  `mapstructure:"window_seconds"` // 时间窗口（秒）
+}
+
+// SearchConfig 搜索服务配置
+type SearchConfig struct {
+	Provider string `mapstructure:"provider"` // 搜索服务提供商
+	APIKey   string `mapstructure:"api_key"`  // API密钥
 }
