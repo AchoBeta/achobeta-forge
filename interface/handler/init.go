@@ -4,6 +4,7 @@ import (
 	"context"
 	"forge/biz/types"
 	"forge/interface/def"
+	"forge/interface/outputPort"
 )
 
 type IHandler interface {
@@ -38,12 +39,18 @@ type IHandler interface {
 
 	//AiChat: ai对话相关
 	SendMessage(ctx context.Context, req *def.ProcessUserMessageRequest) (*def.ProcessUserMessageResponse, error)
+	SendMessageStream(ctx context.Context, req *def.ProcessUserMessageRequest, writer *outputPort.GinSSEWriter) (resp *def.ProcessUserMessageResponse, err error)
 	SaveNewConversation(ctx context.Context, req *def.SaveNewConversationRequest) (*def.SaveNewConversationResponse, error)
 	GetConversationList(ctx context.Context, req *def.GetConversationListRequest) (*def.GetConversationListResponse, error)
 	DelConversation(ctx context.Context, req *def.DelConversationRequest) (*def.DelConversationResponse, error)
 	GetConversation(ctx context.Context, req *def.GetConversationRequest) (*def.GetConversationResponse, error)
 	UpdateConversationTitle(ctx context.Context, req *def.UpdateConversationTitleRequest) (*def.UpdateConversationTitleResponse, error)
 	GenerateMindMap(ctx context.Context, req *def.GenerateMindMapRequest) (*def.GenerateMindMapResponse, error)
+
+	// Tab补全和质量数据导出
+	TabComplete(ctx context.Context, req *def.TabCompletionRequest) (*def.TabCompletionResponse, error)
+	ExportQualityData(ctx context.Context, req *def.ExportQualityDataRequest) (*def.ExportQualityDataResponse, error)
+	TriggerQualityAssessment(ctx context.Context, req *def.TriggerQualityAssessmentRequest) (*def.TriggerQualityAssessmentResponse, error)
 
 	// Generation: 批量生成相关接口
 	GenerateMindMapPro(ctx context.Context, req *def.GenerateMindMapProReq) (rsp *def.GenerateMindMapProResp, err error)

@@ -3,7 +3,10 @@ package zlog
 import (
 	"context"
 	"fmt"
-	"forge/constant"
+	"forge/pkg/trace"
+	"reflect"
+	"strings"
+
 	"github.com/bytedance/gg/gslice"
 
 	"go.uber.org/zap"
@@ -24,8 +27,7 @@ var logger *zap.Logger
 //	@param fields
 //	@return context.Context
 func WithLogKey(ctx context.Context, fields ...zapcore.Field) context.Context {
-	ctx = context.WithValue(ctx, loggerKey, withContext(ctx).With(fields...))
-	// 获取之前的logdetail
+	// 先获取之前的logdetail（从原始ctx获取）
 	detail := make([]zapcore.Field, 0)
 	_detail := ctx.Value(logDetail)
 	if _detail != nil {
@@ -34,25 +36,11 @@ func WithLogKey(ctx context.Context, fields ...zapcore.Field) context.Context {
 	// 深拷贝防止污染
 	detail = gslice.Clone(detail)
 	detail = append(detail, fields...)
-	return context.WithValue(ctx, loggerKey, detail)
-}
 
-// 通过ctx获得logid
-func GetLogId(ctx context.Context) (string, bool) {
-	detail := make([]zapcore.Field, 0)
-	_detail := ctx.Value(logDetail)
-	if _detail == nil {
-		return "", false
-	}
-	detail = _detail.([]zapcore.Field)
-	find := gslice.Find(detail, func(field zapcore.Field) bool {
-		return field.String == constant.LOGID
-	})
-	logid, ok := find.Get()
-	if !ok {
-		return "", false
-	}
-	return logid.String, false
+	// 设置logger和logDetail
+	ctx = context.WithValue(ctx, loggerKey, withContext(ctx).With(fields...))
+	ctx = context.WithValue(ctx, logDetail, detail)
+	return ctx
 }
 
 func InitLogger(zapLogger *zap.Logger) {
@@ -64,9 +52,17 @@ func withContext(ctx context.Context) *zap.Logger {
 	if ctx == nil {
 		return logger
 	}
+
+	// 如果 context 中有 logger，直接返回（已经包含了字段）
 	if ctxLogger, ok := ctx.Value(loggerKey).(*zap.Logger); ok {
 		return ctxLogger
 	}
+
+	// 如果 context 中没有 logger，自动从 trace 模块获取 trace_id 并添加到 logger
+	if traceID, ok := trace.GetTraceID(ctx); ok {
+		return logger.With(zap.String("trace_id", traceID))
+	}
+
 	return logger
 }
 
@@ -120,10 +116,133 @@ func CtxFatalf(ctx context.Context, format string, v ...interface{}) {
 	withContext(ctx).Fatal(fmt.Sprintf(format, v...))
 }
 
+// filterMindMapJSON 过滤掉 mindmap 相关的 JSON 字段，避免日志过长
+// 只检查当前层级的字段，不递归检查嵌套结构
+func filterMindMapJSON(data any) any {
+	if data == nil {
+		return nil
+	}
+
+	// 定义需要过滤的字段名（不区分大小写）
+	filterFields := map[string]bool{
+		"mapjson":      true,
+		"newmapjson":   true,
+		"map_json":     true,
+		"new_map_json": true,
+		"mapdata":      true,
+		"map_data":     true,
+	}
+
+	val := reflect.ValueOf(data)
+	if val.Kind() == reflect.Ptr {
+		if val.IsNil() {
+			return nil
+		}
+		val = val.Elem()
+	}
+
+	// 处理 map 类型
+	if val.Kind() == reflect.Map {
+		result := make(map[string]interface{})
+		for _, key := range val.MapKeys() {
+			keyStr := fmt.Sprintf("%v", key.Interface())
+			value := val.MapIndex(key).Interface()
+
+			// 检查是否需要过滤（转换为小写后精确匹配或前缀匹配）
+			keyLower := strings.ToLower(keyStr)
+			shouldFilter := false
+			for filterKey := range filterFields {
+				if keyLower == filterKey || strings.HasPrefix(keyLower, filterKey) {
+					shouldFilter = true
+					break
+				}
+			}
+
+			if shouldFilter {
+				// 如果是字符串类型，只显示长度信息
+				if str, ok := value.(string); ok {
+					if len(str) > 0 {
+						result[keyStr] = fmt.Sprintf("[length: %d]", len(str))
+					} else {
+						result[keyStr] = "[empty]"
+					}
+				} else {
+					result[keyStr] = "[filtered]"
+				}
+			} else {
+				// 不递归，直接保留原值
+				result[keyStr] = value
+			}
+		}
+		return result
+	}
+
+	// 处理结构体类型
+	if val.Kind() == reflect.Struct {
+		result := make(map[string]interface{})
+		typ := val.Type()
+		for i := 0; i < val.NumField(); i++ {
+			field := typ.Field(i)
+			fieldVal := val.Field(i)
+
+			// 获取 JSON tag 或字段名
+			jsonTag := field.Tag.Get("json")
+			fieldName := field.Name
+			if jsonTag != "" && jsonTag != "-" {
+				// 处理 json tag，可能包含 omitempty 等选项
+				if idx := len(jsonTag); idx > 0 {
+					for j := 0; j < len(jsonTag); j++ {
+						if jsonTag[j] == ',' {
+							idx = j
+							break
+						}
+					}
+					if idx > 0 {
+						fieldName = jsonTag[:idx]
+					}
+				}
+			}
+
+			fieldNameLower := strings.ToLower(fieldName)
+			shouldFilter := false
+			for filterKey := range filterFields {
+				if fieldNameLower == filterKey || strings.HasPrefix(fieldNameLower, filterKey) {
+					shouldFilter = true
+					break
+				}
+			}
+
+			if shouldFilter {
+				if fieldVal.Kind() == reflect.String && fieldVal.CanInterface() {
+					str := fieldVal.String()
+					if len(str) > 0 {
+						result[fieldName] = fmt.Sprintf("[length: %d]", len(str))
+					} else {
+						result[fieldName] = "[empty]"
+					}
+				} else {
+					result[fieldName] = "[filtered]"
+				}
+			} else if fieldVal.CanInterface() {
+				// 不递归，直接保留原值
+				result[fieldName] = fieldVal.Interface()
+			}
+		}
+		return result
+	}
+
+	// 其他类型直接返回
+	return data
+}
+
 func CtxAllInOne(ctx context.Context, action string, input, output any, err error) {
 	if err != nil {
+		// 错误时：不管 JSON 树大小，都完整打印，不进行任何过滤
 		withContext(ctx).Error(action+" failed", zap.Any("input", input), zap.Any("output", output), zap.Error(err))
 	} else {
-		withContext(ctx).Info(action+" succeed", zap.Any("input", input), zap.Any("output", output))
+		// 成功时：过滤掉 mindmap JSON 字段，只显示长度信息
+		filteredInput := filterMindMapJSON(input)
+		filteredOutput := filterMindMapJSON(output)
+		withContext(ctx).Info(action+" succeed", zap.Any("input", filteredInput), zap.Any("output", filteredOutput))
 	}
 }

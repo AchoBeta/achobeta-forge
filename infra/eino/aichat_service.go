@@ -11,11 +11,17 @@ import (
 	"forge/biz/types"
 	"forge/infra/configs"
 	"forge/pkg/log/zlog"
+	"forge/pkg/loop"
+	"io"
+	"sync"
 
+	"github.com/cloudwego/eino-ext/callbacks/cozeloop"
 	"github.com/cloudwego/eino-ext/components/model/ark"
+	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
+	"github.com/coze-dev/cozeloop-go/spec/tracespec"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 )
@@ -40,6 +46,10 @@ func initState(ctx context.Context) *State {
 	}
 }
 
+var (
+	einoCallbackOnce sync.Once
+)
+
 func NewAiChatClient(apiKey, modelName string) repo.EinoServer {
 
 	var toolSchemaMap map[string]interface{}
@@ -53,6 +63,10 @@ func NewAiChatClient(apiKey, modelName string) repo.EinoServer {
 	}
 
 	ctx := context.Background()
+
+	einoCallbackOnce.Do(func() {
+		initEinoCozeLoopCallback()
+	})
 
 	var aiChatClient AiChatClient
 
@@ -248,10 +262,34 @@ func NewAiChatClient(apiKey, modelName string) repo.EinoServer {
 	return &aiChatClient
 }
 
-func (a *AiChatClient) SendMessage(ctx context.Context, messages []*entity.Message) (types.AgentResponse, error) {
+// initEinoCozeLoopCallback 初始化 Eino CozeLoop 回调
+func initEinoCozeLoopCallback() {
+	if !loop.IsEnabled() {
+		zlog.Infof("CozeLoop is disabled, skipping Eino callback registration")
+		return
+	}
+
+	// 获取 CozeLoop 客户端
+	client := loop.GetClient()
+	if client == nil {
+		zlog.Warnf("CozeLoop client not available, skipping Eino callback registration")
+		return
+	}
+
+	// 创建扣子罗盘的回调处理器（handler）
+	handler := cozeloop.NewLoopHandler(client)
+
+	// 将处理器注册到 Eino 框架的全局回调系统中
+	callbacks.AppendGlobalHandlers(handler)
+
+	zlog.Infof("CozeLoop Eino callback handler initialized successfully (once)")
+}
+
+func (a *AiChatClient) SendMessage(ctx context.Context, messages []*entity.Message) (resp types.AgentResponse, err error) {
+	// AI 调用通过 Eino 框架，由 Eino 回调自动上报到 CozeLoop
 	input := messagesDo2Input(messages)
 
-	resp, err := a.Agent.Invoke(ctx, input)
+	resp, err = a.Agent.Invoke(ctx, input)
 
 	if err != nil {
 		zlog.Errorf("模型调用失败%v", err)
@@ -260,15 +298,82 @@ func (a *AiChatClient) SendMessage(ctx context.Context, messages []*entity.Messa
 	return resp, nil
 }
 
-// 传入文本生成导图
-func (a *AiChatClient) GenerateMindMap(ctx context.Context, text, userID string) (string, error) {
-	message := initGenerateMindMapMessage(text, userID)
+func (a *AiChatClient) SendMessageStream(ctx context.Context, messages []*entity.Message) (<-chan types.StreamChunk, error) {
 
-	resp, err := a.GenerateMapAiClient.Generate(ctx, message)
+	// 创建通道用于传输流式数据
+	chunkChan := make(chan types.StreamChunk, 10)
+
+	go a.handleStreaming(ctx, messages, chunkChan)
+
+	return chunkChan, nil
+}
+
+// 异步返回分块信息
+func (a *AiChatClient) handleStreaming(
+	ctx context.Context,
+	messages []*entity.Message,
+	chunkChan chan<- types.StreamChunk,
+) {
+	defer close(chunkChan) // 确保通道被关闭
+
+	// 将消息转换为Eino框架需要的输入格式
+	input := messagesDo2Input(messages)
+
+	//调用流式生成
+	stream, err := a.GenerateMapAiClient.Stream(ctx, input)
+
 	if err != nil {
-		zlog.Errorf("模型调用失败%v", err)
+		zlog.Errorf("流式模型调用失败: %v", err)
+		chunkChan <- types.StreamChunk{Error: err}
+		return
+	}
+
+	// 处理流式响应
+	for {
+		// 读取流式数据
+		chunkData, err := stream.Recv()
+		if err != nil {
+			if err == io.EOF {
+				chunkChan <- types.StreamChunk{IsLast: true}
+			} else {
+				// The underlying stream should return an error on context cancellation.
+				chunkChan <- types.StreamChunk{Error: err}
+			}
+			return
+		}
+
+		if chunkData.Content == "" {
+			continue
+		}
+
+		// 发送数据块，同时检查上下文是否被取消
+		select {
+		case chunkChan <- types.StreamChunk{
+			Content: chunkData.Content,
+			IsLast:  false,
+		}:
+		case <-ctx.Done():
+			chunkChan <- types.StreamChunk{Error: ctx.Err()}
+			return
+		}
+	}
+}
+
+// 传入文本生成导图（使用结构化输出确保 JSON 格式准确）
+func (a *AiChatClient) GenerateMindMap(ctx context.Context, text, userID string) (result string, err error) {
+	// 使用与批量生成相同的结构化输出方式
+	messages := initGenerateMindMapMessage(text, userID)
+
+	// 获取 JSON Schema
+	mindMapSchema := generationservice.GetMindMapJSONSchema()
+
+	// 使用结构化输出调用 API
+	resp, err := a.generateWithStructuredOutput(ctx, messages, mindMapSchema)
+	if err != nil {
+		zlog.CtxErrorf(ctx, "模型调用失败: %v", err)
 		return "", err
 	}
+
 	return resp.Content, nil
 }
 
@@ -282,12 +387,55 @@ func (a *AiChatClient) GenerateMindMapBatch(ctx context.Context, text, userID st
 }
 
 // generateWithStructuredOutput 使用结构化输出调用火山引擎 API
-// 直接使用 volcengine-go-sdk 以支持 response_format 参数
+// 保持原有的 ResponseFormat 参数以确保 JSON 格式严格性
+// 同时添加手动 Model Span 追踪（因为直接 API 调用不会被 Eino 回调捕获）
 func (a *AiChatClient) generateWithStructuredOutput(
 	ctx context.Context,
 	messages []*schema.Message,
 	jsonSchema map[string]interface{},
-) (*schema.Message, error) {
+) (result *schema.Message, err error) {
+	// 声明响应变量，使其在defer块中可用
+	var resp model.ChatCompletionResponse
+
+	// 创建手动 Model Span 用于追踪结构化输出调用
+	ctx, modelSpan := loop.StartModelSpan(ctx, "eino.generate_structured_output", "doubao", a.ModelName)
+	defer func() {
+		if modelSpan != nil {
+			// 构建追踪消息
+			traceMessages := make([]*tracespec.ModelMessage, 0, len(messages))
+			for _, msg := range messages {
+				var role string
+				switch msg.Role {
+				case schema.System:
+					role = tracespec.VRoleSystem
+				case schema.User:
+					role = tracespec.VRoleUser
+				case schema.Assistant:
+					role = tracespec.VRoleAssistant
+				default:
+					role = tracespec.VRoleUser
+				}
+				traceMessages = append(traceMessages, &tracespec.ModelMessage{
+					Role:    role,
+					Content: msg.Content,
+				})
+			}
+
+			// 设置 Model Span 数据 - 记录完整的响应内容
+			var responseContent string
+			if result != nil && result.Content != "" {
+				responseContent = result.Content // 记录完整的 JSON 输出
+			}
+
+			// 提取token使用量信息
+			var inputTokens, outputTokens int64
+			inputTokens = int64(resp.Usage.PromptTokens)
+			outputTokens = int64(resp.Usage.CompletionTokens)
+
+			loop.SetModelSpanData(ctx, modelSpan, traceMessages, responseContent, inputTokens, outputTokens, err)
+		}
+	}()
+
 	// 使用复用的火山引擎客户端
 	client := a.ArkClient
 
@@ -335,7 +483,7 @@ func (a *AiChatClient) generateWithStructuredOutput(
 	}
 
 	// 调用 API
-	resp, err := client.CreateChatCompletion(ctx, request)
+	resp, err = client.CreateChatCompletion(ctx, request)
 	if err != nil {
 		return nil, fmt.Errorf("结构化输出调用失败: %w", err)
 	}
@@ -356,10 +504,11 @@ func (a *AiChatClient) generateWithStructuredOutput(
 		return nil, errors.New("API返回内容格式不正确")
 	}
 
-	return &schema.Message{
+	result = &schema.Message{
 		Content: contentStr,
 		Role:    schema.Assistant,
-	}, nil
+	}
+	return result, nil
 }
 
 // generateForSFTTraining 策略1：SFT训练数据策略 - 并行生成+结构化输出

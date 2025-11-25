@@ -170,6 +170,7 @@ func (g *generationPersistence) UpdateGenerationResult(ctx context.Context, resu
 }
 
 // GetLabeledResults 获取已标记的结果（用于SFT导出）
+// userID 为空时导出所有用户的数据
 func (g *generationPersistence) GetLabeledResults(ctx context.Context, userID, startDate, endDate string) ([]*entity.GenerationResult, error) {
 	var resultPOs []po.GenerationResultPO
 
@@ -180,8 +181,12 @@ func (g *generationPersistence) GetLabeledResults(ctx context.Context, userID, s
 	db := g.db.WithContext(ctx).
 		Table(resultTable).
 		Joins(fmt.Sprintf("JOIN %s ON %s.batch_id COLLATE utf8mb4_unicode_ci = %s.batch_id COLLATE utf8mb4_unicode_ci", batchTable, resultTable, batchTable)).
-		Where(fmt.Sprintf("%s.user_id = ?", batchTable), userID).
 		Where(fmt.Sprintf("%s.label != 0", resultTable)) // 只获取已标记的数据
+
+	// 用户ID过滤（如果提供）
+	if userID != "" {
+		db = db.Where(fmt.Sprintf("%s.user_id = ?", batchTable), userID)
+	}
 
 	// 时间范围过滤
 	if startDate != "" {

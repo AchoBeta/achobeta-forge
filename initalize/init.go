@@ -20,9 +20,12 @@ import (
 	"forge/interface/handler"
 	"forge/interface/router"
 	"forge/pkg/log"
+	"forge/pkg/queue"
+
 	"github.com/unidoc/unioffice/v2/common/license"
 	pdfLicense "github.com/unidoc/unipdf/v4/common/license"
-	// "forge/pkg/loop"
+
+	"forge/pkg/loop"
 	"forge/util"
 )
 
@@ -35,8 +38,8 @@ func Init() {
 	log.InitLog(path, configs.Config())
 	database.MustInitDatabase(configs.Config())
 	cache.MustInitCache(configs.Config())
-	// TODO: cozeloop配置好后启用
-	// loop.MustInitLoop()
+	// 初始化 CozeLoop 客户端
+	loop.InitCozeLoop()
 	coze.InitCozeService()
 	notification.InitCodeService(configs.Config().GetSMTPConfig(), configs.Config().GetSMSConfig())
 
@@ -75,6 +78,11 @@ func Init() {
 
 	// 依赖注入: 创建generation服务实例
 	gs := generationservice.NewGenerationService(storage.GetGenerationPersistence(), storage.GetAiChatPersistence(), storage.GetMindMapPersistence())
+
+	// 初始化质量评估队列
+	if err := queue.InitQualityQueue(storage.GetAiChatPersistence()); err != nil {
+		panic(fmt.Sprintf("初始化质量评估队列失败: %v", err))
+	}
 
 	handler.MustInitHandler(us, mms, cs, acs, gs)
 

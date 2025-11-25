@@ -57,7 +57,7 @@ func register() (router *gin.Engine) {
 	// mindmap路由组需要JWT鉴权
 	mindMapGroup := r.Group("mindmap", jwtAuthMiddleware)
 	loadMindMapService(mindMapGroup)
-	loadGenerationService(mindMapGroup) // 添加生成相关路由
+	loadGenerationService(mindMapGroup)
 
 	// cos路由组需要JWT鉴权
 	cosGroup := r.Group("cos", jwtAuthMiddleware)
@@ -150,6 +150,36 @@ func loadMindMapService(r *gin.RouterGroup) {
 	r.Handle(POST, "batch_delete", BatchDeleteMindMap())
 }
 
+func loadGenerationService(r *gin.RouterGroup) {
+	// 批量生成导图
+	// [POST] /api/biz/v1/mindmap/generation/pro
+	r.Handle(POST, "generation/pro", GenerateMindMapPro())
+
+	// 获取批次详情
+	// [GET] /api/biz/v1/mindmap/generation/batch?batch_id=xxx
+	r.Handle(GET, "generation/batch", GetGenerationBatch())
+
+	// 标记结果
+	// [POST] /api/biz/v1/mindmap/generation/result/:result_id/label
+	r.Handle(POST, "generation/result/:result_id/label", LabelGenerationResult())
+
+	// 获取用户批次列表
+	// [GET] /api/biz/v1/mindmap/generation/batches
+	r.Handle(GET, "generation/batches", ListUserGenerationBatches())
+
+	// 导出SFT数据到文件
+	// [GET] /api/biz/v1/mindmap/generation/export-sft-file
+	r.Handle(GET, "generation/export-sft-file", ExportSFTDataToFile())
+
+	// 导出Session格式SFT数据
+	// [GET] /api/biz/v1/mindmap/generation/export-sft-session-file
+	r.Handle(GET, "generation/export-sft-session-file", ExportSFTSessionDataToFile())
+
+	// 导出DPO数据
+	// [GET] /api/biz/v1/mindmap/generation/export-dpo
+	r.Handle(GET, "generation/export-dpo", ExportDPOData())
+}
+
 func loadCOSService(r *gin.RouterGroup) {
 	// 获取OSS临时凭证
 	// [POST] /api/biz/v1/cos/sts/credentials
@@ -160,6 +190,8 @@ func loadAiChat(r *gin.RouterGroup) {
 	// 基础ai对话
 	// [POST] /api/biz/v1/aichat/send_message
 	r.Handle(POST, "send_message", SendMessage())
+
+	r.Handle(POST, "send_message_stream", SendMessageStream())
 
 	//新增会话
 	// [POST] /api/biz/v1/aichat/save_conversation
@@ -185,4 +217,16 @@ func loadAiChat(r *gin.RouterGroup) {
 	// [POST] /api/biz/v1/aichat/generate_mind_map
 	// 表单名称 file
 	r.Handle(POST, "generate_mind_map", GenerateMindMap())
+
+	// Tab补全
+	// [POST] /api/biz/v1/aichat/tab_complete
+	r.Handle(POST, "tab_complete", TabComplete())
+
+	// 导出质量数据
+	// [GET] /api/biz/v1/aichat/export_quality_data
+	r.Handle(GET, "export_quality_data", ExportQualityData())
+
+	// 手动触发质量评估
+	// [POST] /api/biz/v1/aichat/trigger_quality_assessment
+	r.Handle(POST, "trigger_quality_assessment", TriggerQualityAssessment())
 }

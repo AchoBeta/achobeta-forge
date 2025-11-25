@@ -1,11 +1,16 @@
 package initalize
 
 import (
+	"context"
 	"forge/pkg/log/zlog"
+	"forge/pkg/loop"
 	"runtime"
 )
 
 func Eve() {
+	// 关闭 CozeLoop 客户端
+	loop.Close(context.Background())
+	
 	//zlog.Warnf("开始释放资源！")
 	//errRedis := global.Rdb.Close()
 	//if errRedis != nil {
