@@ -66,7 +66,7 @@ func (a *AiChatService) ProcessUserMessage(ctx context.Context, req *types.Proce
 		return types.AgentResponse{}, err
 	}
 
-	//长度限制o
+	//长度限制100
 	if len(conversation.Messages) > 100 {
 		return types.AgentResponse{}, AI_CHAT_MESSAGE_MAX
 	}
