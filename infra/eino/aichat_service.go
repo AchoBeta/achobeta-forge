@@ -220,6 +220,10 @@ func NewAiChatClient(apiKey, modelName string) repo.EinoServer {
 	//tool执行完后 把输出保存
 	toolPostHandler := func(ctx context.Context, input []*schema.Message, state *State) (output []*schema.Message, err error) {
 		//输出添加到state中
+		if input == nil {
+			return nil, errors.New("tool出错")
+		}
+
 		if input[len(input)-1].Role == schema.Tool {
 			state.MapJson = input[len(input)-1].Content
 			state.ToolCallID = input[len(input)-1].ToolCallID
