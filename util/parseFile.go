@@ -26,6 +26,7 @@ const (
 	mimeTypePPT  = "application/vnd.ms-powerpoint"
 	mimeTypePPTx = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 	mimeTypeZip  = "application/zip"
+	mimeTypeTXT  = "text/plain"
 )
 
 // 文件解析器接口
@@ -54,6 +55,7 @@ func initRegistry() {
 	globalRegistry.Register(&PDFParser{})
 	globalRegistry.Register(&WordParser{})
 	globalRegistry.Register(&PPTParser{})
+	globalRegistry.Register(&TXTParser{})
 }
 
 // GetRegistry 获取全局解析器注册表
@@ -219,6 +221,31 @@ func (p *PPTParser) Parse(fh *multipart.FileHeader) (string, error) {
 
 func (p *PPTParser) Name() string {
 	return "PPTParser"
+}
+
+type TXTParser struct{}
+
+func (p *TXTParser) Supports(mimeType, ext string) bool {
+	return mimeType == mimeTypeTXT && ext == ".txt"
+}
+
+func (p *TXTParser) Parse(fh *multipart.FileHeader) (string, error) {
+	f, err := fh.Open()
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	fileContent, err := io.ReadAll(f)
+	if err != nil {
+		return "", err
+	}
+
+	return string(fileContent), nil
+}
+
+func (p *TXTParser) Name() string {
+	return "TXTParser"
 }
 
 // 支持的文件扩展名

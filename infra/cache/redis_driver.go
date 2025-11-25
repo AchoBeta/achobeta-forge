@@ -80,3 +80,8 @@ func DelRedis(ctx context.Context, key string) error {
 	}
 	return redisClient.Del(ctx, key).Err()
 }
+
+// GetRedisClient 获取 Redis 客户端实例
+func GetRedisClient() *redis.Client {
+	return redisClient
+}
