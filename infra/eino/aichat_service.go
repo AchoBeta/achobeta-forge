@@ -13,6 +13,7 @@ import (
 	"forge/pkg/log/zlog"
 	"forge/pkg/loop"
 	"io"
+	"strings"
 	"sync"
 
 	"github.com/cloudwego/eino-ext/callbacks/cozeloop"
@@ -32,6 +33,7 @@ type AiChatClient struct {
 	Agent               compose.Runnable[[]*schema.Message, types.AgentResponse]
 	ToolAiClient        *ark.ChatModel
 	GenerateMapAiClient *ark.ChatModel
+	StreamChatClient    *ark.ChatModel // 流式输出专用客户端（不带JSON限制）
 	ArkClient           *arkruntime.Client
 	SearchService       *SearchService // 搜索服务
 }
@@ -105,12 +107,23 @@ func NewAiChatClient(apiKey, modelName string) repo.EinoServer {
 		panic(fmt.Errorf("generateModel模型连接失败: %v", err))
 	}
 
-	//toolAiClient = toolModel
+	// 初始化流式输出专用模型（不带JSON Schema限制，可以输出普通文字）
+	streamChatClient, err := ark.NewChatModel(ctx, &ark.ChatModelConfig{
+		APIKey:   apiKey,
+		Model:    modelName,
+		Thinking: &model.Thinking{Type: model.ThinkingTypeEnabled},
+		// 注意：这里不设置 ResponseFormat，让模型自由输出文字
+	})
+	if streamChatClient == nil || err != nil {
+		zlog.Errorf("StreamChatClient模型连接失败: %v", err)
+		panic(fmt.Errorf("StreamChatClient模型连接失败: %v", err))
+	}
 
 	aiChatClient.ApiKey = apiKey
 	aiChatClient.ModelName = modelName
 	aiChatClient.ToolAiClient = toolModel
 	aiChatClient.GenerateMapAiClient = generateModel
+	aiChatClient.StreamChatClient = streamChatClient
 	aiChatClient.ArkClient = arkruntime.NewClientWithApiKey(apiKey) // 初始化火山引擎客户端，复用避免重复创建
 
 	// 初始化搜索服务
@@ -339,8 +352,63 @@ func (a *AiChatClient) handleStreaming(
 	// 将消息转换为Eino框架需要的输入格式
 	input := messagesDo2Input(messages)
 
-	//调用流式生成
-	stream, err := a.GenerateMapAiClient.Stream(ctx, input)
+	// 检查是否需要调用工具（判断最后一条消息是否包含修改导图的意图）
+	// 如果涉及工具调用，先用非流式 Agent 处理，然后模拟流式输出
+	_, hasConversation := entity.GetConversation(ctx)
+	needToolCall := false
+
+	if hasConversation && len(messages) > 0 {
+		lastMsg := messages[len(messages)-1]
+		// 简单判断：如果包含"修改"、"改成"、"更新"等关键词，可能需要工具
+		content := lastMsg.Content
+		if containsToolKeywords(content) {
+			needToolCall = true
+		}
+	}
+
+	if needToolCall {
+		// 使用 Agent（支持工具调用）
+		zlog.CtxInfof(ctx, "检测到可能需要工具调用，使用 Agent 处理")
+		resp, err := a.Agent.Invoke(ctx, input)
+		if err != nil {
+			zlog.Errorf("Agent调用失败: %v", err)
+			chunkChan <- types.StreamChunk{Error: err}
+			return
+		}
+
+		// 模拟流式输出：将完整内容分块发送
+		content := resp.Content
+		if resp.NewMapJson != "" {
+			// 如果有新的导图JSON，也要发送
+			content = "已为您更新思维导图。\n\n" + resp.Content
+		}
+
+		// 按字分块发送（模拟流式）
+		chunkSize := 10 // 每次发送10个字符
+		for i := 0; i < len(content); i += chunkSize {
+			end := i + chunkSize
+			if end > len(content) {
+				end = len(content)
+			}
+
+			select {
+			case chunkChan <- types.StreamChunk{
+				Content: content[i:end],
+				IsLast:  false,
+			}:
+			case <-ctx.Done():
+				chunkChan <- types.StreamChunk{Error: ctx.Err()}
+				return
+			}
+		}
+
+		// 发送结束标志
+		chunkChan <- types.StreamChunk{IsLast: true}
+		return
+	}
+
+	// 普通对话：使用流式客户端
+	stream, err := a.StreamChatClient.Stream(ctx, input)
 
 	if err != nil {
 		zlog.Errorf("流式模型调用失败: %v", err)
@@ -377,6 +445,17 @@ func (a *AiChatClient) handleStreaming(
 			return
 		}
 	}
+}
+
+// containsToolKeywords 判断是否包含工具调用关键词
+func containsToolKeywords(content string) bool {
+	keywords := []string{"修改", "改成", "更新", "调整", "变成", "换成", "删除", "添加"}
+	for _, keyword := range keywords {
+		if strings.Contains(content, keyword) {
+			return true
+		}
+	}
+	return false
 }
 
 // 传入文本生成导图（使用结构化输出确保 JSON 格式准确）
