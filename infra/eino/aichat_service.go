@@ -32,6 +32,7 @@ type AiChatClient struct {
 	Agent               compose.Runnable[[]*schema.Message, types.AgentResponse]
 	ToolAiClient        *ark.ChatModel
 	GenerateMapAiClient *ark.ChatModel
+	StreamChatClient    *ark.ChatModel // 流式输出专用客户端（不带JSON限制）
 	ArkClient           *arkruntime.Client
 }
 
@@ -111,12 +112,23 @@ func NewAiChatClient(apiKey, modelName string) repo.EinoServer {
 		panic(fmt.Errorf("generateModel模型连接失败: %v", err))
 	}
 
-	//toolAiClient = toolModel
+	// 初始化流式输出专用模型（不带JSON Schema限制，可以输出普通文字）
+	streamChatClient, err := ark.NewChatModel(ctx, &ark.ChatModelConfig{
+		APIKey:   apiKey,
+		Model:    modelName,
+		Thinking: &model.Thinking{Type: model.ThinkingTypeEnabled},
+		// 注意：这里不设置 ResponseFormat，让模型自由输出文字
+	})
+	if streamChatClient == nil || err != nil {
+		zlog.Errorf("StreamChatClient模型连接失败: %v", err)
+		panic(fmt.Errorf("StreamChatClient模型连接失败: %v", err))
+	}
 
 	aiChatClient.ApiKey = apiKey
 	aiChatClient.ModelName = modelName
 	aiChatClient.ToolAiClient = toolModel
 	aiChatClient.GenerateMapAiClient = generateModel
+	aiChatClient.StreamChatClient = streamChatClient
 	aiChatClient.ArkClient = arkruntime.NewClientWithApiKey(apiKey) // 初始化火山引擎客户端，复用避免重复创建
 
 	//构建agent
@@ -372,8 +384,8 @@ func (a *AiChatClient) handleStreaming(
 	// 将消息转换为Eino框架需要的输入格式
 	input := messagesDo2Input(messages)
 
-	//调用流式生成
-	stream, err := a.GenerateMapAiClient.Stream(ctx, input)
+	//调用流式生成（使用StreamChatClient，输出普通文字而非JSON）
+	stream, err := a.StreamChatClient.Stream(ctx, input)
 
 	if err != nil {
 		zlog.Errorf("流式模型调用失败: %v", err)
