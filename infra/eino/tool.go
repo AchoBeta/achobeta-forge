@@ -127,3 +127,53 @@ func (p *WebSearchParams) UnmarshalJSON(data []byte) error {
 	}
 	return nil
 }
+
+// GenerateMindMapFromText 从文本生成思维导图工具实现
+func (a *AiChatClient) GenerateMindMapFromText(ctx context.Context, params *GenerateMindMapParams) (string, error) {
+	if params.Text == "" {
+		return "", fmt.Errorf("文本内容不能为空")
+	}
+
+	// 从上下文中获取用户ID
+	userID := "default_user"
+	conversation, ok := entity.GetConversation(ctx)
+	if ok && conversation.UserID != "" {
+		userID = conversation.UserID
+	}
+
+	zlog.CtxInfof(ctx, "开始生成思维导图，文本长度: %d, userID: %s", len(params.Text), userID)
+
+	// 调用生成思维导图方法
+	result, err := a.GenerateMindMap(ctx, params.Text, userID)
+	if err != nil {
+		zlog.CtxErrorf(ctx, "生成思维导图失败: %v", err)
+		return "", fmt.Errorf("生成思维导图失败: %w", err)
+	}
+
+	zlog.CtxInfof(ctx, "思维导图生成成功")
+	return result, nil
+}
+
+// CreateGenerateMindMapTool 创建生成思维导图工具
+func (a *AiChatClient) CreateGenerateMindMapTool() tool.InvokableTool {
+	generateTool := utils.NewTool(
+		&schema.ToolInfo{
+			Name: "generate_mind_map",
+			Desc: "根据提供的文本内容生成思维导图JSON。当用户要求生成新的思维导图时调用此工具。如果用户只提供了主题（如「红楼梦」），建议先使用web_search搜索相关资料，然后将搜索结果的摘要作为text参数传入本工具生成导图。返回完整的思维导图JSON格式。",
+			ParamsOneOf: schema.NewParamsOneOfByParams(
+				map[string]*schema.ParameterInfo{
+					"text": {
+						Type:     schema.String,
+						Desc:     "用于生成思维导图的文本内容。可以是用户提供的详细内容，也可以是从web_search获取的搜索结果摘要。内容越详细，生成的导图质量越高。",
+						Required: true,
+					},
+				},
+			),
+		}, a.GenerateMindMapFromText)
+	return generateTool
+}
+
+// GenerateMindMapParams 生成思维导图参数
+type GenerateMindMapParams struct {
+	Text string `json:"text" jsonschema:"description=用于生成思维导图的文本内容"`
+}

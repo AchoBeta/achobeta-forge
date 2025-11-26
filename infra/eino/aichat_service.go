@@ -128,27 +128,35 @@ func NewAiChatClient(apiKey, modelName string) repo.EinoServer {
 		zlog.Errorf("ai模型连接失败: %v", err)
 		panic(fmt.Errorf("ai模型连接失败: %v", err))
 	}
-	
+
 	// 创建工具
 	updateMindMapTool := aiChatClient.CreateUpdateMindMapTool()
 	webSearchTool := aiChatClient.CreateWebSearchTool()
-	
+	generateMindMapTool := aiChatClient.CreateGenerateMindMapTool()
+
 	// 获取工具信息
 	updateMindMapToolInfo, err := updateMindMapTool.Info(ctx)
 	if err != nil {
 		zlog.Errorf("ai绑定工具失败: %v", err)
 		panic(fmt.Errorf("ai绑定工具失败: %v", err))
 	}
-	
+
 	webSearchToolInfo, err := webSearchTool.Info(ctx)
 	if err != nil {
 		zlog.Errorf("ai绑定搜索工具失败: %v", err)
 		panic(fmt.Errorf("ai绑定搜索工具失败: %v", err))
 	}
 
+	generateMindMapToolInfo, err := generateMindMapTool.Info(ctx)
+	if err != nil {
+		zlog.Errorf("ai绑定生成导图工具失败: %v", err)
+		panic(fmt.Errorf("ai绑定生成导图工具失败: %v", err))
+	}
+
 	infosTool := []*schema.ToolInfo{
 		updateMindMapToolInfo,
 		webSearchToolInfo,
+		generateMindMapToolInfo,
 	}
 	err = aiChatModel.BindTools(infosTool)
 	if err != nil {
@@ -160,6 +168,7 @@ func NewAiChatClient(apiKey, modelName string) repo.EinoServer {
 		Tools: []tool.BaseTool{
 			updateMindMapTool,
 			webSearchTool,
+			generateMindMapTool,
 		},
 	})
 
