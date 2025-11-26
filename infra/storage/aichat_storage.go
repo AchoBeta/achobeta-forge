@@ -1,0 +1,356 @@
+package storage
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"forge/biz/aichatservice"
+	"forge/biz/entity"
+	"forge/biz/repo"
+	"forge/infra/database"
+	"forge/infra/storage/po"
+
+	"gorm.io/gorm"
+)
+
+type aiChatPersistence struct {
+	db *gorm.DB
+}
+
+var cp *aiChatPersistence
+
+func InitAiChatStorage() {
+	db := database.ForgeDB()
+
+	if err := db.AutoMigrate(&po.ConversationPO{}); err != nil {
+		panic(fmt.Sprintf("自动建表失败 :%v", err))
+	}
+
+	cp = &aiChatPersistence{db: db}
+}
+
+func GetAiChatPersistence() repo.AiChatRepo { return cp }
+
+func (a *aiChatPersistence) GetConversation(ctx context.Context, conversationID, userID string) (*entity.Conversation, error) {
+	if conversationID == "" {
+		return nil, aichatservice.CONVERSATION_ID_NOT_NULL
+	}
+
+	var conversationPO po.ConversationPO
+	query := a.db.WithContext(ctx).Model(&po.ConversationPO{}).Where("conversation_id = ?", conversationID)
+
+	// userID 为空时不进行用户ID过滤（用于导出场景）
+	if userID != "" {
+		query = query.Where("user_id = ?", userID)
+	}
+
+	if err := query.First(&conversationPO).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, aichatservice.CONVERSATION_NOT_EXIST
+		}
+		return nil, fmt.Errorf("数据库出错 :%w", err)
+
+	}
+
+	return CastConversationPO2DO(&conversationPO)
+}
+
+func (a *aiChatPersistence) GetMapAllConversation(ctx context.Context, mapID, userID string) ([]*entity.Conversation, error) {
+
+	if mapID == "" {
+		return nil, aichatservice.MAP_ID_NOT_NULL
+	} else if userID == "" {
+		return nil, aichatservice.USER_ID_NOT_NULL
+	}
+
+	check, err := checkMapIsExist(ctx, a, mapID)
+	if err != nil {
+		return nil, err
+	} else if !check {
+		return nil, aichatservice.MIND_MAP_NOT_EXIST
+	}
+
+	var conversationPOs []po.ConversationPO
+	if err := a.db.WithContext(ctx).Model(&po.ConversationPO{}).Where("map_id = ? AND user_id = ?", mapID, userID).Find(&conversationPOs).Error; err != nil {
+		return nil, fmt.Errorf("获取导图会话时 数据库出错 %w", err)
+	}
+
+	return CastConversationPOs2DOs(conversationPOs)
+}
+
+func (a *aiChatPersistence) SaveConversation(ctx context.Context, conversation *entity.Conversation) error {
+
+	if conversation.ConversationID == "" {
+		return aichatservice.CONVERSATION_ID_NOT_NULL
+	} else if conversation.UserID == "" {
+		return aichatservice.USER_ID_NOT_NULL
+	} else if conversation.MapID == "" {
+		return aichatservice.MAP_ID_NOT_NULL
+	} else if conversation.Title == "" {
+		return aichatservice.CONVERSATION_TITLE_NOT_NULL
+	}
+
+	check, err := checkMapIsExist(ctx, a, conversation.MapID)
+	if err != nil {
+		return err
+	} else if !check {
+		return aichatservice.MIND_MAP_NOT_EXIST
+	}
+
+	conversationPO, err := CastConversationDO2PO(conversation)
+	if err != nil {
+		return err
+	}
+	err = a.db.WithContext(ctx).Model(&po.ConversationPO{}).Create(&conversationPO).Error
+	if err != nil {
+		return fmt.Errorf("保存会话时，数据库出错 %w", err)
+	}
+	return nil
+}
+
+func (a *aiChatPersistence) UpdateConversationMessage(ctx context.Context, conversation *entity.Conversation) error {
+
+	if conversation.UserID == "" {
+		return aichatservice.USER_ID_NOT_NULL
+	} else if conversation.MapID == "" {
+		return aichatservice.MAP_ID_NOT_NULL
+	}
+
+	check, err := checkConversationIsExist(ctx, a, conversation.ConversationID)
+	if err != nil {
+		return err
+	} else if !check {
+		return aichatservice.CONVERSATION_NOT_EXIST
+	}
+
+	conversationPO, err := CastConversationDO2PO(conversation)
+	if err != nil {
+		return err
+	}
+
+	Updates := make(map[string]interface{})
+	if conversationPO.Messages != nil {
+		Updates["messages"] = conversationPO.Messages
+	}
+
+	err = a.db.WithContext(ctx).Model(&po.ConversationPO{}).Where("conversation_id = ? AND user_id = ?", conversationPO.ConversationID, conversationPO.UserID).Updates(Updates).Error
+	if err != nil {
+		return fmt.Errorf("更新会话时 数据库出错 %w", err)
+	}
+	return nil
+}
+
+func (a *aiChatPersistence) UpdateConversationTitle(ctx context.Context, conversation *entity.Conversation) error {
+
+	if conversation.UserID == "" {
+		return aichatservice.USER_ID_NOT_NULL
+	} else if conversation.MapID == "" {
+		return aichatservice.MAP_ID_NOT_NULL
+	}
+
+	check, err := checkConversationIsExist(ctx, a, conversation.ConversationID)
+
+	if err != nil {
+		return err
+	} else if !check {
+		return aichatservice.CONVERSATION_NOT_EXIST
+	}
+
+	conversationPO, err := CastConversationDO2PO(conversation)
+	if err != nil {
+		return err
+	}
+	Updates := make(map[string]interface{})
+	if conversationPO.Title != "" {
+		Updates["title"] = conversationPO.Title
+	}
+
+	err = a.db.WithContext(ctx).Model(&po.ConversationPO{}).Where("conversation_id = ? AND user_id = ?", conversationPO.ConversationID, conversationPO.UserID).Updates(Updates).Error
+	if err != nil {
+		return fmt.Errorf("更新会话时 数据库出错 %w", err)
+	}
+	return nil
+}
+
+func (a *aiChatPersistence) DeleteConversation(ctx context.Context, conversationID, userID string) error {
+	if conversationID == "" {
+		return aichatservice.CONVERSATION_ID_NOT_NULL
+	} else if userID == "" {
+		return aichatservice.USER_ID_NOT_NULL
+	}
+
+	result := a.db.WithContext(ctx).Model(&po.ConversationPO{}).Where("conversation_id = ? AND user_id = ?", conversationID, userID).Delete(&po.ConversationPO{})
+	if result.RowsAffected == 0 {
+		return aichatservice.CONVERSATION_NOT_EXIST
+	}
+	if result.Error != nil {
+		return fmt.Errorf("删除会话时出错 %w", result.Error)
+	}
+	return nil
+}
+
+func checkMapIsExist(ctx context.Context, a *aiChatPersistence, checkMapID string) (bool, error) {
+	var id uint64
+	err := a.db.WithContext(ctx).Model(&po.MindMapPO{}).Select("id").Where("map_id = ?", checkMapID).Take(&id).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
+	} else if err != nil {
+		return false, fmt.Errorf("查询失败 数据库错误 %w", err)
+	} else {
+		return true, nil
+	}
+}
+
+func checkConversationIsExist(ctx context.Context, a *aiChatPersistence, checkConversationID string) (bool, error) {
+	var id uint64
+	err := a.db.WithContext(ctx).Model(&po.ConversationPO{}).Select("id").Where("conversation_id = ?", checkConversationID).Take(&id).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
+	} else if err != nil {
+		return false, fmt.Errorf("查询失败 数据库错误 %w", err)
+	} else {
+		return true, nil
+	}
+}
+
+// GetQualityConversations 获取高质量的对话数据用于导出
+// 注意：只获取真实用户对话，排除SFT训练数据
+func (a *aiChatPersistence) GetQualityConversations(ctx context.Context, startDate, endDate *string, limit int) ([]*entity.Conversation, error) {
+	var conversationPOs []po.ConversationPO
+	query := a.db.WithContext(ctx).Model(&po.ConversationPO{})
+
+	// 关键：排除SFT训练数据，只获取真实用户对话
+	query = query.Where("map_id NOT IN (?, ?)", entity.SFT_BATCH_GENERATION, entity.SFT_FEWSHOT_GENERATION)
+
+	// 添加时间范围过滤
+	if startDate != nil && *startDate != "" {
+		query = query.Where("created_at >= ?", *startDate)
+	}
+	if endDate != nil && *endDate != "" {
+		query = query.Where("created_at <= ?", *endDate)
+	}
+
+	// 添加限制
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+
+	// 按创建时间排序
+	query = query.Order("created_at DESC")
+
+	if err := query.Find(&conversationPOs).Error; err != nil {
+		return nil, fmt.Errorf("获取质量对话时数据库出错: %w", err)
+	}
+
+	conversations, err := CastConversationPOs2DOs(conversationPOs)
+	if err != nil {
+		return nil, err
+	}
+
+	// 填充MapData：根据MapID和UserID查询MindMap数据
+	if err := a.fillMapDataForConversations(ctx, conversations); err != nil {
+		return nil, fmt.Errorf("填充导图数据失败: %w", err)
+	}
+
+	return conversations, nil
+}
+
+// fillMapDataForConversations 为对话列表填充导图数据
+func (a *aiChatPersistence) fillMapDataForConversations(ctx context.Context, conversations []*entity.Conversation) error {
+	if len(conversations) == 0 {
+		return nil
+	}
+
+	// 收集所有唯一的 MapID 和 UserID 组合
+	type mapKey struct {
+		MapID  string
+		UserID string
+	}
+	mapKeys := make(map[mapKey]bool)
+	for _, conv := range conversations {
+		if conv.MapID != "" && conv.UserID != "" {
+			mapKeys[mapKey{MapID: conv.MapID, UserID: conv.UserID}] = true
+		}
+	}
+
+	// 批量查询MindMap数据
+	mindMapPersistence := GetMindMapPersistence()
+	mapDataCache := make(map[mapKey]string) // 缓存MapID对应的JSON数据
+
+	for key := range mapKeys {
+		query := repo.NewMindMapQueryByID(key.UserID, key.MapID)
+		mindMap, err := mindMapPersistence.GetMindMap(ctx, query)
+		if err != nil {
+			// 如果查询失败，记录警告但继续处理其他数据
+			continue
+		}
+		if mindMap == nil {
+			// MindMap不存在，使用空JSON
+			mapDataCache[key] = "{}"
+			continue
+		}
+
+		// 将MindMap的Data序列化为JSON字符串
+		dataBytes, err := json.Marshal(mindMap.Data)
+		if err != nil {
+			// 序列化失败，使用空JSON
+			mapDataCache[key] = "{}"
+			continue
+		}
+		mapDataCache[key] = string(dataBytes)
+	}
+
+	// 填充每个Conversation的MapData
+	for _, conv := range conversations {
+		key := mapKey{MapID: conv.MapID, UserID: conv.UserID}
+		if mapData, ok := mapDataCache[key]; ok {
+			conv.MapData = mapData
+		} else {
+			// 如果没有找到对应的MindMap，使用空JSON
+			conv.MapData = "{}"
+		}
+	}
+
+	return nil
+}
+
+// UpdateMessageQuality 更新特定消息的质量评分 - 使用原子操作
+func (a *aiChatPersistence) UpdateMessageQuality(ctx context.Context, conversationID string, messageID string, qualityScore int) error {
+	// 1. 先获取对话以找到消息在JSON数组中的索引
+	conversation, err := a.GetConversation(ctx, conversationID, "")
+	if err != nil {
+		return fmt.Errorf("获取对话失败: %w", err)
+	}
+
+	// 2. 查找消息在JSON数组中的索引
+	messageIndex := -1
+	for i, message := range conversation.Messages {
+		if message.ID == messageID {
+			messageIndex = i
+			break
+		}
+	}
+
+	if messageIndex == -1 {
+		return fmt.Errorf("在会话 %s 中未找到ID为 %s 的消息", conversationID, messageID)
+	}
+
+	// 3. 使用数据库原子的JSON_SET函数更新，避免竞态条件
+	// TODO: 不优雅，后面改
+	// 注意：字段名必须与Message结构体的JSON标签一致（quality_score）
+	jsonPath := fmt.Sprintf("$[%d].quality_score", messageIndex)
+	result := a.db.WithContext(ctx).Model(&po.ConversationPO{}).
+		Where("conversation_id = ?", conversationID).
+		Update("messages", gorm.Expr("JSON_SET(messages, ?, ?)", jsonPath, qualityScore))
+
+	if result.Error != nil {
+		return fmt.Errorf("原子更新消息质量评分失败: %w", result.Error)
+	}
+
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("更新消息质量评分时没有行受到影响，会话ID: %s", conversationID)
+	}
+
+	return nil
+}

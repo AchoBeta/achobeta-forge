@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  # MySQL 数据库服务
+  mysql:
+    image: mysql:8.0
+    container_name: forge_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root123456
+      MYSQL_DATABASE: fortest
+      MYSQL_USER: fortest
+      MYSQL_PASSWORD: test
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./forge/sql:/docker-entrypoint-initdb.d
+    command: --default-authentication-plugin=mysql_native_password
+    networks:
+      - forge_network
+
+  # Redis 缓存服务
+  redis:
+    image: redis:7-alpine
+    container_name: forge_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - forge_network
+
+  # 应用服务（可选，如果需要容器化部署）
+  app:
+    build:
+      context: ./forge
+      dockerfile: Dockerfile
+    container_name: forge_app
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - APP_ENV=dev
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_USER=fortest
+      - DB_PASSWORD=test
+      - DB_NAME=fortest
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - mysql
+      - redis
+    networks:
+      - forge_network
+    profiles:
+      - app  # 使用 profile 控制是否启动应用服务
+
+volumes:
+  mysql_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  forge_network:
+    driver: bridge
