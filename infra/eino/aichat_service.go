@@ -34,6 +34,7 @@ type AiChatClient struct {
 	GenerateMapAiClient *ark.ChatModel
 	StreamChatClient    *ark.ChatModel // 流式输出专用客户端（不带JSON限制）
 	ArkClient           *arkruntime.Client
+	SearchService       *SearchService // 搜索服务
 }
 
 type State struct {
@@ -131,6 +132,11 @@ func NewAiChatClient(apiKey, modelName string) repo.EinoServer {
 	aiChatClient.StreamChatClient = streamChatClient
 	aiChatClient.ArkClient = arkruntime.NewClientWithApiKey(apiKey) // 初始化火山引擎客户端，复用避免重复创建
 
+	// 初始化搜索服务
+	searchConfig := configs.Config().GetSearchConfig()
+	aiChatClient.SearchService = NewSearchService(searchConfig.Provider, searchConfig.APIKey)
+	zlog.Infof("搜索服务初始化完成，使用提供商: %s", searchConfig.Provider)
+
 	//构建agent
 	aiChatModel, err := ark.NewChatModel(ctx, &ark.ChatModelConfig{
 		APIKey:   apiKey,
@@ -153,15 +159,33 @@ func NewAiChatClient(apiKey, modelName string) repo.EinoServer {
 		panic(fmt.Errorf("sumUp 模型连接失败: %v", err))
 	}
 
+	//创建工具
 	updateMindMapTool := aiChatClient.CreateUpdateMindMapTool()
-	infoTool, err := updateMindMapTool.Info(ctx)
+	webSearchTool := aiChatClient.CreateWebSearchTool()
+	generateMindMapTool := aiChatClient.CreateGenerateMindMapTool()
+	// 获取工具信息
+	updateMindMapToolInfo, err := updateMindMapTool.Info(ctx)
 	if err != nil {
 		zlog.Errorf("ai绑定工具失败: %v", err)
 		panic(fmt.Errorf("ai绑定工具失败: %v", err))
 	}
 
+	webSearchToolInfo, err := webSearchTool.Info(ctx)
+	if err != nil {
+		zlog.Errorf("ai绑定搜索工具失败: %v", err)
+		panic(fmt.Errorf("ai绑定搜索工具失败: %v", err))
+	}
+
+	generateMindMapToolInfo, err := generateMindMapTool.Info(ctx)
+	if err != nil {
+		zlog.Errorf("ai绑定生成导图工具失败: %v", err)
+		panic(fmt.Errorf("ai绑定生成导图工具失败: %v", err))
+	}
+
 	infosTool := []*schema.ToolInfo{
-		infoTool,
+		updateMindMapToolInfo,
+		webSearchToolInfo,
+		generateMindMapToolInfo,
 	}
 	err = aiChatModel.BindTools(infosTool)
 	if err != nil {
@@ -172,6 +196,8 @@ func NewAiChatClient(apiKey, modelName string) repo.EinoServer {
 	ToolsNode, err := compose.NewToolNode(ctx, &compose.ToolsNodeConfig{
 		Tools: []tool.BaseTool{
 			updateMindMapTool,
+			webSearchTool,
+			generateMindMapTool,
 		},
 	})
 
